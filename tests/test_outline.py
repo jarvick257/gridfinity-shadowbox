@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
-from gridfinity_cutter import sheet, step1
+from gridfinity_cutter import outline, sheet
 
 SPEC = sheet.SheetSpec()
 FIXTURE = Path(__file__).parent / "fixtures" / "box_cutter.jpg"
@@ -46,7 +46,7 @@ def test_synthetic_rectangle_recovered_in_mm(tmp_path, seed):
     path = tmp_path / "photo.png"
     cv2.imwrite(str(path), photo)
 
-    res = step1.run(path, tmp_path / "out.svg", px_per_mm=8.0)
+    res = outline.run(path, tmp_path / "out.svg", px_per_mm=8.0)
 
     assert res.reprojection_error_mm < 0.5
     assert np.allclose(res.bbox_mm, rect, atol=0.5)
@@ -59,21 +59,21 @@ def test_missing_marker_raises(tmp_path):
     photo[: photo.shape[0] // 3, : photo.shape[1] // 3] = 200  # wipe the TL marker
     path = tmp_path / "photo.png"
     cv2.imwrite(str(path), photo)
-    with pytest.raises(step1.OutlineError, match=r"marker id\(s\) \[0\]"):
-        step1.run(path, tmp_path / "out.svg")
+    with pytest.raises(outline.OutlineError, match=r"marker id\(s\) \[0\]"):
+        outline.run(path, tmp_path / "out.svg")
 
 
 def test_empty_sheet_raises(tmp_path):
     page = cv2.cvtColor(render_sheet_raster(4.0), cv2.COLOR_GRAY2BGR)
     path = tmp_path / "photo.png"
     cv2.imwrite(str(path), page)
-    with pytest.raises(step1.OutlineError, match="no object found"):
-        step1.run(path, tmp_path / "out.svg")
+    with pytest.raises(outline.OutlineError, match="no object found"):
+        outline.run(path, tmp_path / "out.svg")
 
 
 def test_box_cutter_fixture(tmp_path):
     out = tmp_path / "knife.svg"
-    res = step1.run(FIXTURE, out, px_per_mm=5.0)
+    res = outline.run(FIXTURE, out, px_per_mm=5.0)
     assert res.reprojection_error_mm < 1.0
     w, h = res.size_mm
     # TODO: tighten once the knife is measured with calipers.
@@ -85,17 +85,42 @@ def test_box_cutter_fixture(tmp_path):
 def test_write_svg_contract(tmp_path):
     poly = np.array([[30.0, 40.0], [60.0, 40.0], [60.0, 90.0], [30.0, 90.0]])
     out = tmp_path / "o.svg"
-    w, h = step1.write_svg(out, poly, comment="test -- comment")
+    w, h = outline.write_svg(out, poly, comment="test -- comment")
 
     root = ET.parse(out).getroot()
     ns = {"svg": "http://www.w3.org/2000/svg"}
     assert root.tag == "{http://www.w3.org/2000/svg}svg"
     assert root.get("width") == f"{w:.3f}mm" and root.get("height") == f"{h:.3f}mm"
     assert root.get("viewBox") == f"0 0 {w:.3f} {h:.3f}"
-    assert np.isclose(w, 30 + 2 * step1.SVG_MARGIN_MM)
-    assert np.isclose(h, 50 + 2 * step1.SVG_MARGIN_MM)
+    assert np.isclose(w, 30 + 2 * outline.SVG_MARGIN_MM)
+    assert np.isclose(h, 50 + 2 * outline.SVG_MARGIN_MM)
     paths = root.findall("svg:path", ns)
     assert len(paths) == 1
     assert paths[0].get("d").endswith(" Z")
-    assert paths[0].get("d").startswith(f"M {step1.SVG_MARGIN_MM:.3f} {step1.SVG_MARGIN_MM:.3f}")
+    assert (
+        paths[0].get("d").startswith(f"M {outline.SVG_MARGIN_MM:.3f} {outline.SVG_MARGIN_MM:.3f}")
+    )
     assert not any("transform" in el.attrib for el in root.iter())
+
+
+def test_rectify_accepts_array_and_path(tmp_path):
+    photo = synthetic_photo((80.0, 100.0, 110.0, 150.0))
+    path = tmp_path / "photo.png"
+    cv2.imwrite(str(path), photo)
+    warped_a, err_a = outline.rectify(photo, px_per_mm=4.0)
+    warped_p, err_p = outline.rectify(path, px_per_mm=4.0)
+    w, h = SPEC.page_mm
+    assert warped_a.shape == (int(h * 4), int(w * 4), 3)
+    assert np.array_equal(warped_a, warped_p) and err_a == err_p
+    with pytest.raises(outline.OutlineError, match="cannot read"):
+        outline.rectify(tmp_path / "missing.png")
+
+
+def test_split_segmentation_matches_segment_object():
+    warped, _ = outline.rectify(FIXTURE, px_per_mm=5.0)
+    mask, thr = outline.segment_object(warped, px_per_mm=5.0)
+    feat = outline.paper_features(warped, px_per_mm=5.0)
+    mask2, thr2 = outline.mask_from_features(feat, px_per_mm=5.0)
+    assert thr == thr2 and np.array_equal(mask, mask2)
+    mask3, thr3 = outline.mask_from_features(feat, px_per_mm=5.0, threshold=thr + 10)
+    assert thr3 == thr + 10 and not np.array_equal(mask, mask3)

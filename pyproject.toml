@@ -7,7 +7,14 @@ dependencies = [
     "numpy",
     "opencv-contrib-python-headless",
     "reportlab",
+    "svgelements",
+    "shapely",
+    "trimesh",
+    "mapbox-earcut",
 ]
+
+[project.optional-dependencies]
+ui = ["gradio>=6,<7"]
 
 [project.scripts]
 gridfinity-cutter = "gridfinity_cutter.cli:main"

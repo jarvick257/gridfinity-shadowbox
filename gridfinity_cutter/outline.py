@@ -10,7 +10,7 @@ Known limitations
 -----------------
 * Parallax: a tall object photographed from close range shows its top face
   larger than its footprint. Shoot from at least ~60 cm straight down, or
-  compensate with a negative clearance in step 2.
+  compensate with a negative clearance in the extrude step.
 * Shiny, white or very light objects may be under-segmented. ``--threshold``
   and ``--debug DIR`` are the escape hatches; the SVG can also be hand-edited.
 """
@@ -103,6 +103,23 @@ def warp_to_sheet(
     return cv2.warpPerspective(img, scale @ h, size, flags=cv2.INTER_LINEAR)
 
 
+def rectify(
+    image: str | Path | np.ndarray,
+    spec: SheetSpec = DEFAULT_SPEC,
+    px_per_mm: float = DEFAULT_PX_PER_MM,
+) -> tuple[np.ndarray, float]:
+    """Photo (path or BGR array) -> (warped sheet image, max marker reprojection error mm)."""
+    if isinstance(image, np.ndarray):
+        img = image
+    else:
+        img = cv2.imread(str(image))
+        if img is None:
+            raise OutlineError(f"cannot read image {image}")
+    markers = detect_markers(img, spec)
+    h, err = compute_homography(markers, spec)
+    return warp_to_sheet(img, h, spec, px_per_mm), err
+
+
 def _work_area_px(spec: SheetSpec, px_per_mm: float) -> tuple[int, int, int, int]:
     """Work-area crop in warped-image pixels, inset so the dashed outline is excluded."""
     x0, y0, x1, y1 = sheet.work_area_mm(spec)
@@ -177,6 +194,44 @@ def _largest_area(mask: np.ndarray) -> float:
     )
 
 
+@dataclass(frozen=True)
+class PaperFeatures:
+    """Threshold-independent part of the segmentation, cacheable per warped image."""
+
+    dist: np.ndarray  # (H, W) float32 Lab distance from the modelled paper colour
+    edges: np.ndarray  # (H, W) uint8 dilated Canny edges, 255 = edge
+
+
+def paper_features(
+    warped: np.ndarray, spec: SheetSpec = DEFAULT_SPEC, px_per_mm: float = DEFAULT_PX_PER_MM
+) -> PaperFeatures:
+    """Paper-distance map and edge map of the work-area crop (see ``segment_object``)."""
+    x0, y0, x1, y1 = _work_area_px(spec, px_per_mm)
+    crop = warped[y0:y1, x0:x1]
+    lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB).astype(np.float32)
+    strip = max(1, round(PAPER_SAMPLE_STRIP_MM * px_per_mm))
+    dist = np.linalg.norm(lab - _paper_model(lab, strip), axis=2)
+    gray = cv2.GaussianBlur(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+    edges = cv2.dilate(cv2.Canny(gray, 40, 120), _ellipse(0.3, px_per_mm))
+    return PaperFeatures(dist=dist, edges=edges)
+
+
+def mask_from_features(
+    feat: PaperFeatures, px_per_mm: float = DEFAULT_PX_PER_MM, threshold: float | None = None
+) -> tuple[np.ndarray, float]:
+    """Foreground mask from cached features, plus the threshold used (see ``segment_object``)."""
+    dist, edges = feat.dist, feat.edges
+    if threshold is None:
+        steps = np.arange(AUTO_THRESHOLD_MIN, AUTO_THRESHOLD_MAX + 1, AUTO_THRESHOLD_STEP)
+        areas = [_largest_area(_mask_at(dist, edges, float(t), px_per_mm)) for t in steps]
+        threshold = float(steps[-1])
+        for t, a0, a1 in zip(steps, areas, areas[1:]):
+            if a0 > 0 and (a0 - a1) / a0 < AUTO_THRESHOLD_PLATEAU:
+                threshold = float(t)
+                break
+    return _mask_at(dist, edges, float(threshold), px_per_mm), float(threshold)
+
+
 def segment_object(
     warped: np.ndarray,
     spec: SheetSpec = DEFAULT_SPEC,
@@ -194,25 +249,11 @@ def segment_object(
     it stops shrinking is used. Soft shadows fade out with rising threshold
     while a hard-edged object keeps its area, so this lands just above the
     shadow.
+
+    ``paper_features`` + ``mask_from_features`` is the same computation split
+    so that the expensive, threshold-independent half can be cached.
     """
-    x0, y0, x1, y1 = _work_area_px(spec, px_per_mm)
-    crop = warped[y0:y1, x0:x1]
-    lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB).astype(np.float32)
-    strip = max(1, round(PAPER_SAMPLE_STRIP_MM * px_per_mm))
-    dist = np.linalg.norm(lab - _paper_model(lab, strip), axis=2)
-
-    gray = cv2.GaussianBlur(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY), (5, 5), 0)
-    edges = cv2.dilate(cv2.Canny(gray, 40, 120), _ellipse(0.3, px_per_mm))
-
-    if threshold is None:
-        steps = np.arange(AUTO_THRESHOLD_MIN, AUTO_THRESHOLD_MAX + 1, AUTO_THRESHOLD_STEP)
-        areas = [_largest_area(_mask_at(dist, edges, float(t), px_per_mm)) for t in steps]
-        threshold = float(steps[-1])
-        for t, a0, a1 in zip(steps, areas, areas[1:]):
-            if a0 > 0 and (a0 - a1) / a0 < AUTO_THRESHOLD_PLATEAU:
-                threshold = float(t)
-                break
-    return _mask_at(dist, edges, float(threshold), px_per_mm), float(threshold)
+    return mask_from_features(paper_features(warped, spec, px_per_mm), px_per_mm, threshold)
 
 
 def extract_outline(
@@ -284,18 +325,13 @@ def run(
     min_area_mm2: float = DEFAULT_MIN_AREA_MM2,
     debug_dir: str | Path | None = None,
 ) -> OutlineResult:
-    img = cv2.imread(str(image))
-    if img is None:
-        raise OutlineError(f"cannot read image {image}")
-    markers = detect_markers(img, spec)
-    h, err = compute_homography(markers, spec)
+    warped, err = rectify(image, spec, px_per_mm)
     if err > REPROJECTION_WARN_MM:
         print(
             f"warning: marker reprojection error {err:.2f} mm; check that the sheet was "
             "printed at 100% and lies flat",
             file=sys.stderr,
         )
-    warped = warp_to_sheet(img, h, spec, px_per_mm)
     mask, thr = segment_object(warped, spec, px_per_mm, threshold)
     polygon = extract_outline(mask, spec, px_per_mm, tolerance_mm, min_area_mm2)
 
