@@ -19,7 +19,23 @@ from typing import Any
 from gridfinity_cutter import extrude, outline
 from gridfinity_cutter.bins import BACKEND_NAMES, BinParams
 
-__all__ = ["BinParams", "GeometryParams", "ImageParams", "Params", "ParamsError"]
+__all__ = [
+    "BIN_GENERIC_FIELDS",
+    "BinParams",
+    "GeometryParams",
+    "ImageParams",
+    "Params",
+    "ParamsError",
+]
+
+# BinParams fields with their own CLI flags; every other field gets a generated
+# ``--bin-<name>`` flag with argparse dest ``bin_<name>`` (see cli._add_bin_options).
+BIN_SPECIAL_FIELDS = frozenset(
+    {"units_x", "units_y", "gridz", "offset_x_mm", "offset_y_mm", "rotation_deg", "backend"}
+)
+BIN_GENERIC_FIELDS: tuple[str, ...] = tuple(
+    f.name for f in fields(BinParams) if f.name not in BIN_SPECIAL_FIELDS
+)
 
 
 class ParamsError(ValueError):
@@ -100,10 +116,11 @@ class Params:
             "mirror": g.mirror,
             "curve_tolerance": g.curve_tolerance_mm,
             "bin_units": [b.units_x, b.units_y],
-            "bin_height": b.units_z,
+            "bin_height": b.gridz,
             "offset": [b.offset_x_mm, b.offset_y_mm],
             "rotation": b.rotation_deg,
             "bin_backend": b.backend,
+            **{f"bin_{name}": getattr(b, name) for name in BIN_GENERIC_FIELDS},
         }
 
 
@@ -116,5 +133,5 @@ def _section(klass: type, name: str, data: Any) -> Any:
         raise ParamsError(f"unknown key(s) in {name!r}: {sorted(unknown)}")
     try:
         return klass(**data)
-    except TypeError as e:
+    except (TypeError, ValueError) as e:
         raise ParamsError(f"bad {name!r} section: {e}") from e

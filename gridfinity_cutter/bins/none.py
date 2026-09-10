@@ -23,7 +23,7 @@ class NoneBackend:
 
     def build(self, cutout: Polygon | MultiPolygon, height_mm: float, bin: BinParams) -> BinResult:
         w, d, h = bin.size_mm
-        solid = extrude.extrude_geometry(cutout, height_mm, z0=h - height_mm)
+        solid = extrude.extrude_geometry(cutout, height_mm, z0=bin.pocket_top_mm - height_mm)
         block = trimesh.creation.box((w - BIN_GAP_MM, d - BIN_GAP_MM, h))
         block.apply_translation((w / 2, d / 2, h / 2))
         block.visual = trimesh.visual.TextureVisuals(

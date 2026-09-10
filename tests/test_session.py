@@ -85,12 +85,12 @@ def test_fit_bin(session):
 
 
 def test_render_scene(session):
-    p = params(units_x=2, units_y=5, units_z=3, offset_x_mm=5, offset_y_mm=-3, height_mm=12)
+    p = params(units_x=2, units_y=5, gridz=3, offset_x_mm=5, offset_y_mm=-3, height_mm=12)
     glb = session.render(p)
     scene = trimesh.load(str(glb))
     assert set(scene.geometry) == {"cutout", "bin"}
     cutout = scene.geometry["cutout"]
-    assert np.allclose(cutout.bounds[:, 2], (21 - 12, 21), atol=1e-4)
+    assert np.allclose(cutout.bounds[:, 2], (19.8 - 12, 19.8), atol=1e-4)  # lip support: -1.2
     minx, miny = cutout.bounds[0, :2]
     maxx, maxy = cutout.bounds[1, :2]
     assert np.allclose(((minx + maxx) / 2, (miny + maxy) / 2), (42 + 5, 105 - 3), atol=1e-3)
@@ -98,7 +98,7 @@ def test_render_scene(session):
     # Rewriting with other parameters changes the file in place.
     glb2 = session.render(params(units_x=2, units_y=5, height_mm=5))
     assert glb2 == glb
-    assert np.allclose(trimesh.load(str(glb2)).geometry["cutout"].bounds[:, 2], (16, 21))
+    assert np.allclose(trimesh.load(str(glb2)).geometry["cutout"].bounds[:, 2], (14.8, 19.8))
 
 
 def test_export_and_cli_reproduce(session, tmp_path):
@@ -118,6 +118,7 @@ def test_export_and_cli_reproduce(session, tmp_path):
 
 
 def test_status_warns_on_deep_pocket(session):
-    text = session.status(params(units_z=1, height_mm=12))
-    assert "WARNING" in text and "threshold" in text
-    assert "WARNING" not in session.status(params(units_z=3, height_mm=12))
+    text = session.status(params(gridz=1, height_mm=12))
+    assert "WARNING: pocket deeper" in text and "threshold" in text
+    assert "WARNING" not in session.status(params(units_x=2, units_y=5, gridz=3, height_mm=12))
+    assert "WARNING: cutout within" in session.status(params(units_x=2, units_y=4, height_mm=5))

@@ -28,7 +28,9 @@ def test_defaults_and_errors(tmp_path):
     with pytest.raises(ParamsError, match="unknown key.*'geometry'"):
         Params.from_dict({"geometry": {"depth": 3}})
     with pytest.raises(ParamsError, match="bin.backend"):
-        Params.from_dict({"bin": {"backend": "openscad"}})
+        Params.from_dict({"bin": {"backend": "nope"}})
+    with pytest.raises(ParamsError, match="bad 'bin' section.*refined_holes"):
+        Params.from_dict({"bin": {"magnet_holes": True}})
     bad = tmp_path / "bad.json"
     bad.write_text("{")
     with pytest.raises(ParamsError, match="invalid JSON"):

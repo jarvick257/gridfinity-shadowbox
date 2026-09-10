@@ -16,21 +16,25 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
+from dataclasses import fields
 from functools import partial, update_wrapper
 from pathlib import Path
 
 import gradio as gr
 
 from gridfinity_cutter import extrude, outline, sheet
-from gridfinity_cutter.bins import HEIGHT_UNIT_MM
+from gridfinity_cutter.bins import BACKEND_NAMES, PLACE_TAB_NAMES, STYLE_TAB_NAMES
+from gridfinity_cutter.bins import openscad as scad
 from gridfinity_cutter.params import BinParams, GeometryParams, ImageParams, Params
 from gridfinity_cutter.session import Session, SessionError
 
 TITLE = "gridfinity-cutter"
 Errors = (outline.OutlineError, extrude.ExtrudeError, SessionError, ValueError)
 
-# Order of the plain widget values every handler receives after the session.
-CONTROL_NAMES = (
+# Order of the plain widget values every handler receives after the session:
+# the image/cutout controls, then one value per BinParams field.
+OTHER_CONTROL_NAMES = (
     "px_per_mm",
     "auto",
     "threshold",
@@ -39,13 +43,15 @@ CONTROL_NAMES = (
     "clearance",
     "height",
     "mirror",
-    "units_x",
-    "units_y",
-    "units_z",
-    "offset_x",
-    "offset_y",
-    "rotation",
 )
+BIN_CONTROL_NAMES = tuple(f.name for f in fields(BinParams))
+CONTROL_NAMES = OTHER_CONTROL_NAMES + BIN_CONTROL_NAMES
+_BIN_TYPES = {f.name: type(getattr(BinParams(), f.name)) for f in fields(BinParams)}
+
+
+def bin_from_values(v: dict[str, object]) -> BinParams:
+    """Build ``BinParams`` from widget values keyed by field name (coerced to the field type)."""
+    return BinParams(**{name: _BIN_TYPES[name](v[name]) for name in BIN_CONTROL_NAMES})
 
 
 def params_from_values(*values) -> Params:
@@ -62,15 +68,12 @@ def params_from_values(*values) -> Params:
             clearance_mm=float(v["clearance"]),
             mirror=bool(v["mirror"]),
         ),
-        bin=BinParams(
-            units_x=int(v["units_x"]),
-            units_y=int(v["units_y"]),
-            units_z=int(v["units_z"]),
-            offset_x_mm=float(v["offset_x"]),
-            offset_y_mm=float(v["offset_y"]),
-            rotation_deg=float(v["rotation"]),
-        ),
+        bin=bin_from_values(v),
     )
+
+
+def default_backend() -> str:
+    return "openscad" if scad.available() else "none"
 
 
 def _threshold_update(session: Session, params: Params):
@@ -85,8 +88,8 @@ def _threshold_update(session: Session, params: Params):
 
 def on_image_input(session: Session, *values):
     """Image parameter moved: overlay + threshold slider + status."""
-    params = params_from_values(*values)
     try:
+        params = params_from_values(*values)
         img = session.overlay(params)
         return img, _threshold_update(session, params), session.status(params)
     except Errors as e:
@@ -95,12 +98,11 @@ def on_image_input(session: Session, *values):
 
 def on_change(session: Session, *values):
     """Any parameter settled: overlay + threshold slider + 3D scene + status."""
-    params = params_from_values(*values)
     try:
+        params = params_from_values(*values)
         img = session.overlay(params)
         thr = _threshold_update(session, params)
-        glb = session.render(params)
-        _, res = session.build(params)
+        glb, res = session.render_scene(params)
         return img, thr, str(glb), session.status(params, res)
     except Errors as e:
         return gr.update(), gr.update(), gr.update(), f"error: {e}"
@@ -110,8 +112,8 @@ def on_load(session: Session, photo: str | None, *values):
     """Photo chosen (or px/mm changed): rectify, size the bin to fit, then everything."""
     if not photo:
         return (gr.update(),) * 6 + ("drop a photo of the object on the reference sheet",)
-    params = params_from_values(*values)
     try:
+        params = params_from_values(*values)
         session.load(photo, params.image.px_per_mm)
         ux, uy = session.fit_bin(params)
         values = list(values)
@@ -124,9 +126,9 @@ def on_load(session: Session, photo: str | None, *values):
 
 
 def on_export(session: Session, out_dir: str, stem: str, *values):
-    params = params_from_values(*values)
     stem = (stem or "object").strip()
     try:
+        params = params_from_values(*values)
         files = session.export(params, out_dir or os.getcwd(), stem)
         return [str(f) for f in files], "wrote " + ", ".join(str(f) for f in files)
     except Errors as e:
@@ -161,6 +163,134 @@ def print_sheet_js(spec: sheet.SheetSpec) -> str:
         f.srcdoc = {html};
         document.body.appendChild(f);
     }}"""
+
+
+# -- bin widgets ----------------------------------------------------------------
+
+# (field, accordion, factory taking the default value). Every BinParams field
+# appears exactly once; a test checks that.
+BIN_WIDGETS: list[tuple[str, str, Callable[[object], gr.components.Component]]] = [
+    (
+        "backend",
+        "size",
+        lambda d: gr.Dropdown(label="Bin backend", choices=list(BACKEND_NAMES), value=d),
+    ),
+    (
+        "units_x",
+        "size",
+        lambda d: gr.Slider(label="Units X", minimum=1, maximum=12, step=1, value=d),
+    ),
+    (
+        "units_y",
+        "size",
+        lambda d: gr.Slider(label="Units Y", minimum=1, maximum=12, step=1, value=d),
+    ),
+    ("gridz", "size", lambda d: gr.Number(label="Height (gridz)", value=d, minimum=0, step=0.5)),
+    (
+        "gridz_define",
+        "size",
+        lambda d: gr.Dropdown(
+            label="Height unit",
+            choices=[
+                ("7 mm units (incl. base, excl. lip)", 0),
+                ("Internal mm (excl. base and lip)", 1),
+                ("External mm (excl. lip)", 2),
+                ("External mm (incl. lip)", 3),
+            ],
+            value=d,
+        ),
+    ),
+    ("enable_zsnap", "size", lambda d: gr.Checkbox(label="Snap height to 7 mm", value=d)),
+    ("include_lip", "size", lambda d: gr.Checkbox(label="Stacking lip", value=d)),
+    (
+        "height_internal_mm",
+        "size",
+        lambda d: gr.Number(label="Solid height override (mm, 0 = auto)", value=d, step=0.5),
+    ),
+    ("half_grid", "size", lambda d: gr.Checkbox(label="Half grid (21 mm)", value=d)),
+    ("offset_x_mm", "place", lambda d: gr.Number(label="Offset X (mm)", value=d, step=0.5)),
+    ("offset_y_mm", "place", lambda d: gr.Number(label="Offset Y (mm)", value=d, step=0.5)),
+    ("rotation_deg", "place", lambda d: gr.Number(label="Rotation (deg, CCW)", value=d, step=5)),
+    (
+        "divx",
+        "comp",
+        lambda d: gr.Slider(
+            label="Divisions X (0 = solid)", minimum=0, maximum=12, step=1, value=d
+        ),
+    ),
+    (
+        "divy",
+        "comp",
+        lambda d: gr.Slider(
+            label="Divisions Y (0 = solid)", minimum=0, maximum=12, step=1, value=d
+        ),
+    ),
+    (
+        "depth_mm",
+        "comp",
+        lambda d: gr.Number(label="Compartment depth (mm, 0 = full)", value=d, step=0.5),
+    ),
+    (
+        "style_tab",
+        "comp",
+        lambda d: gr.Dropdown(
+            label="Label tab", choices=list(zip(STYLE_TAB_NAMES, range(6))), value=d
+        ),
+    ),
+    (
+        "place_tab",
+        "comp",
+        lambda d: gr.Dropdown(
+            label="Tabs on", choices=list(zip(PLACE_TAB_NAMES, range(2))), value=d
+        ),
+    ),
+    ("scoop", "comp", lambda d: gr.Slider(label="Scoop", minimum=0, maximum=1, step=0.1, value=d)),
+    ("cut_cylinders", "comp", lambda d: gr.Checkbox(label="Cylindrical compartments", value=d)),
+    (
+        "cylinder_diameter_mm",
+        "comp",
+        lambda d: gr.Number(label="Cylinder diameter (mm)", value=d, step=0.5),
+    ),
+    (
+        "cylinder_chamfer_mm",
+        "comp",
+        lambda d: gr.Number(label="Cylinder chamfer (mm)", value=d, step=0.1),
+    ),
+    ("refined_holes", "holes", lambda d: gr.Checkbox(label="Refined holes", value=d)),
+    ("magnet_holes", "holes", lambda d: gr.Checkbox(label="Magnet holes (6 x 2 mm)", value=d)),
+    ("screw_holes", "holes", lambda d: gr.Checkbox(label="Screw holes (M3)", value=d)),
+    ("only_corners", "holes", lambda d: gr.Checkbox(label="Holes only in the corners", value=d)),
+    ("crush_ribs", "holes", lambda d: gr.Checkbox(label="Crush ribs", value=d)),
+    ("chamfer_holes", "holes", lambda d: gr.Checkbox(label="Chamfered holes", value=d)),
+    ("printable_hole_top", "holes", lambda d: gr.Checkbox(label="Printable hole tops", value=d)),
+    ("enable_thumbscrew", "holes", lambda d: gr.Checkbox(label="Thumbscrew hole", value=d)),
+]
+BIN_ACCORDIONS = (
+    ("size", "Bin size & height", True),
+    ("place", "Cutout placement", True),
+    ("comp", "Compartments", False),
+    ("holes", "Base holes", False),
+)
+
+
+def build_bin_widgets(defaults: BinParams) -> dict[str, gr.components.Component]:
+    """The Bin section: one widget per BinParams field, grouped in accordions."""
+    widgets: dict[str, gr.components.Component] = {}
+    for key, title, open_ in BIN_ACCORDIONS:
+        with gr.Accordion(title, open=open_):
+            for name, group, factory in BIN_WIDGETS:
+                if group == key:
+                    widgets[name] = factory(getattr(defaults, name))
+    return widgets
+
+
+def settle_events(w: gr.components.Component) -> list:
+    """User-driven 'value settled' events per widget type (never ``.change``)."""
+    if isinstance(w, gr.Slider):
+        return [w.release]
+    if isinstance(w, gr.Number | gr.Textbox):
+        return [w.submit, w.blur]
+    return [w.input]
 
 
 # -- layout -------------------------------------------------------------------
@@ -216,20 +346,10 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
                 height = gr.Number(label="Pocket depth (mm)", value=10.0, minimum=0.1, step=0.5)
                 mirror = gr.Checkbox(label="Mirror (object goes in upside down)", value=False)
                 gr.Markdown("**Bin**")
-                with gr.Row():
-                    units_x = gr.Slider(label="Units X", minimum=1, maximum=8, step=1, value=1)
-                    units_y = gr.Slider(label="Units Y", minimum=1, maximum=8, step=1, value=1)
-                units_z = gr.Slider(
-                    label=f"Height units ({HEIGHT_UNIT_MM:g} mm)",
-                    minimum=1,
-                    maximum=12,
-                    step=1,
-                    value=3,
-                )
-                with gr.Row():
-                    offset_x = gr.Number(label="Offset X (mm)", value=0.0, step=0.5)
-                    offset_y = gr.Number(label="Offset Y (mm)", value=0.0, step=0.5)
-                rotation = gr.Number(label="Rotation (deg, CCW)", value=0.0, step=5)
+                bin_defaults = BinParams(backend=default_backend())
+                if bin_defaults.backend == "none":
+                    gr.Markdown(f"_finished bins unavailable: {scad.unavailable_reason()}_")
+                bin_widgets = build_bin_widgets(bin_defaults)
                 gr.Markdown("**Export**")
                 out_dir = gr.Textbox(label="Output folder", value=out0)
                 stem = gr.Textbox(
@@ -242,7 +362,7 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
                 overlay = gr.Image(label="Outline on photo", interactive=False, height=720)
             with gr.Column(scale=2):
                 viewer = gr.Model3D(
-                    label="Cutout in bin (viewer only; STL is the cutout)",
+                    label="Finished bin (what the STL contains)",
                     height=560,
                     clear_color=(0.96, 0.96, 0.97, 1.0),
                     camera_position=(45, 45, None),
@@ -259,14 +379,10 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
             clearance,
             height,
             mirror,
-            units_x,
-            units_y,
-            units_z,
-            offset_x,
-            offset_y,
-            rotation,
+            *(bin_widgets[name] for name in BIN_CONTROL_NAMES),
         ]
         assert len(controls) == len(CONTROL_NAMES)
+        units_x, units_y = bin_widgets["units_x"], bin_widgets["units_y"]
 
         load_out = [overlay, threshold, viewer, status, units_x, units_y, stem]
         photo.upload(bind(on_load), [photo, *controls], load_out, **always)
@@ -292,16 +408,10 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
             min_area.release,
             auto.input,
             mirror.input,
-            units_x.release,
-            units_y.release,
-            units_z.release,
             render_btn.click,
         ]
-        settle += [
-            ev
-            for w in (clearance, height, offset_x, offset_y, rotation)
-            for ev in (w.submit, w.blur)
-        ]
+        for w in (clearance, height, *bin_widgets.values()):
+            settle += settle_events(w)
         for ev in settle:
             ev(bind(on_change), controls, all_out, concurrency_limit=1, **always)
 

@@ -22,7 +22,11 @@ gridfinity_cutter/
   sheet.py      # generate the printable reference sheet (PDF/SVG), known geometry
   outline.py    # photo -> outline SVG
   extrude.py    # SVG -> STL, incl. placement inside a bin
-  bins/         # Gridfinity constants, BinParams, BinBackend protocol; none.py = cutout only
+  bins/         # Gridfinity constants, BinParams, BinBackend protocol
+    none.py     #   cutout only (pocket solid + reference block for the viewer)
+    openscad.py #   finished bin: OpenSCAD renders the bin, pocket subtracted with manifold3d
+    bin.scad    #   wrapper around the vendored library, the only .scad we own
+    gridfinity-rebuilt-openscad/   # git submodule, Gridfinity Rebuilt pinned at tag 2.0.0
   params.py     # params.json schema (ImageParams/GeometryParams/BinParams), CLI defaults
   session.py    # UI logic without any web framework: cached warp, overlay, GLB scene, export
   ui.py         # Gradio layer only (optional extra `ui`); wires widgets to session.py
@@ -38,6 +42,7 @@ so users can inspect and hand-edit the intermediate SVG before extruding.
 Use `uv` (installed; the venv is Python 3.12):
 
 ```
+git submodule update --init      # once: Gridfinity Rebuilt sources for the openscad backend
 uv sync                          # create venv, install deps
 uv sync --extra ui               # additionally install Gradio for the web UI
 uv run gridfinity-cutter sheet -o sheet.pdf
@@ -45,6 +50,7 @@ uv run gridfinity-cutter outline photo.jpg -o object.svg
 uv run gridfinity-cutter extrude object.svg --height 20 -o object.stl
 uv run gridfinity-cutter run photo.jpg --height 20 -o object.stl   # outline + extrude, keeps object.svg
 uv run gridfinity-cutter extrude object.svg --params object.params.json -o object.stl  # reproduce a UI session
+uv run gridfinity-cutter extrude object.svg --height 20 --bin-units 2 2 --bin-backend openscad -o bin.stl  # finished bin
 uv run gridfinity-cutter ui photo.jpg   # interactive UI on http://127.0.0.1:7860
 uv run pytest                    # all tests (UI tests skip without the ui extra)
 uv run pytest tests/test_outline.py -k calibration   # single test
@@ -54,8 +60,17 @@ uv run ruff check . && uv run ruff format .
 Dependencies: `opencv-contrib-python-headless` (ArUco detection, perspective
 transform, contours), `numpy`, `reportlab` (sheet PDF), `svgelements` (SVG
 parsing incl. curves/transforms/units), `shapely` (offset + cleanup),
-`trimesh` + `mapbox-earcut` (extrude + STL/GLB export). Optional extra `ui`:
-`gradio` (6.x; note Gradio 6 moved `css`/`theme` from `Blocks()` to `launch()`).
+`trimesh` + `mapbox-earcut` (extrude + STL/GLB export), `manifold3d` (bin minus
+pocket boolean). Optional extra `ui`: `gradio` (6.x; note Gradio 6 moved
+`css`/`theme` from `Blocks()` to `launch()`).
+
+The `openscad` bin backend needs an OpenSCAD *development build* (2024 or newer;
+Gridfinity Rebuilt 2.0.0 does not parse on 2021.01) found as `openscad-nightly`
+or `openscad` on `PATH`, or via `$GRIDFINITY_CUTTER_OPENSCAD`. On Arch that is
+`openscad-git` or `openscad-snapshot-appimage` from the AUR. Rendered bins are
+cached under `~/.cache/gridfinity-cutter/bins/` (`$GRIDFINITY_CUTTER_CACHE`
+overrides; tests set it to a temp dir). Without the binary the UI falls back
+to backend `none` and says why.
 
 ## Architecture notes
 
@@ -79,11 +94,26 @@ parsing incl. curves/transforms/units), `shapely` (offset + cleanup),
   from above matches the photo (`--mirror` disables that).
 - **Bin coordinates.** With bin options (`--bin-units`, or always in the UI) the STL
   is written in bin coordinates: x/y from the bin's grid corner, z from the bin
-  bottom, pocket sunk into the bin top (`z = 7*units_z - depth .. 7*units_z`).
-  `extrude.placement_matrix` is the single definition of where the cutout goes;
-  the UI overlay draws the bin on the photo by inverting that matrix, never by
-  hand-derived sign rules. Gridfinity constants (42 mm, 7 mm) live only in
-  `bins/__init__.py`, which must not import other project modules at import time.
+  bottom, pocket sunk into the top of the bin's *solid part*
+  (`z = pocket_top_mm - depth .. pocket_top_mm`; with a stacking lip the solid stops
+  1.2 mm below the nominal height). `extrude.placement_matrix` is the single
+  definition of where the cutout goes; the UI overlay draws the bin on the photo by
+  inverting that matrix, never by hand-derived sign rules. Gridfinity constants
+  (42 mm, 7 mm, lip sizes) and the height rules (`bin_height_mm`, `infill_height_mm`,
+  mirrors of the library's `height()`/`new_bin()`) live only in `bins/__init__.py`,
+  which must not import other project modules at import time.
+- **Bin backends.** `BinParams` is flat and maps 1:1 onto the customizer variables of
+  Gridfinity Rebuilt's `gridfinity-rebuilt-bins.scad`; `bins/openscad.py::SCAD_VARS`
+  is the only field-to-variable mapping and a test checks it against `bin.scad` and
+  the library. OpenSCAD renders the *bin only* (`-D` overrides on `bin.scad`, cached
+  by a hash of the defines, the OpenSCAD version and every .scad file); the pocket is
+  subtracted in Python with manifold3d so placement/depth/clearance changes never
+  re-run OpenSCAD. `bin.scad` echoes the bin height and infill height and the
+  backend refuses to continue if they differ from the Python rules. Use Manifold's
+  own validity check for OpenSCAD meshes (`to_manifold`): compartment tops share
+  edges with the infill top, which trimesh's `is_watertight` wrongly rejects. New bin
+  knobs go into `BinParams` (+ `SCAD_VARS`, `bin.scad`, `cli.BIN_HELP`, `ui.BIN_WIDGETS`);
+  CLI flags `--bin-<field>` and params.json keys are generated from the dataclass.
 - **UI split.** `session.py` holds all state and computation and is tested without
   Gradio; `ui.py` only maps widget values to `Params` and back. Only listen to
   user events (`.input`/`.release`/`.submit`/`.blur`), never `.change`, because
@@ -95,6 +125,8 @@ parsing incl. curves/transforms/units), `shapely` (offset + cleanup),
   the UI export writes it, `--params` on `extrude`/`run` reads it as defaults
   (explicit flags win). Add new knobs to the dataclasses and `to_cli_defaults`,
   not to the CLI alone.
+- `tests/test_bins_openscad.py` runs the real OpenSCAD and skips when it is missing;
+  everything else about the backend is tested with fake binaries in `tests/test_bins.py`.
 - Real photos as test fixtures are large; keep a couple of small downscaled
   samples in `tests/fixtures/` and test geometry against known object dimensions
   with tolerances rather than exact pixel matches.

@@ -179,7 +179,7 @@ def test_extrude_geometry_z0():
 
 
 def test_place_in_bin_centre_offset_and_rotation():
-    bin_ = BinParams(units_x=2, units_y=3, units_z=3, offset_x_mm=5.0, offset_y_mm=-7.0)
+    bin_ = BinParams(units_x=2, units_y=3, gridz=3, offset_x_mm=5.0, offset_y_mm=-7.0)
     placed = extrude.place_in_bin(cad_rect(), bin_)
     minx, miny, maxx, maxy = placed.bounds
     assert np.allclose(((minx + maxx) / 2, (miny + maxy) / 2), (42 + 5, 63 - 7))
@@ -203,7 +203,7 @@ def test_place_in_bin_centre_offset_and_rotation():
 
 def test_run_in_bin_coordinates(tmp_path):
     out = tmp_path / "o.stl"
-    bin_ = BinParams(units_x=1, units_y=2, units_z=3)
+    bin_ = BinParams(units_x=1, units_y=2, gridz=3, include_lip=False)
     res = extrude.run(rect_svg(tmp_path), out, height_mm=8, bin=bin_)
     mesh = load(out)
     assert np.allclose(mesh.bounds[:, 2], (21 - 8, 21))
@@ -217,9 +217,10 @@ def test_run_in_bin_coordinates(tmp_path):
 def test_none_backend_context_block():
     from gridfinity_cutter.bins import get_backend
 
-    bin_ = BinParams(units_x=2, units_y=1, units_z=2)
+    bin_ = BinParams(units_x=2, units_y=1, gridz=2)
     res = get_backend("none").build(extrude.place_in_bin(cad_rect(), bin_), 5.0, bin_)
-    assert np.allclose(res.solid.bounds[:, 2], (9, 14))
+    # With a stacking lip the solid part stops 1.2 mm below the 14 mm bin top.
+    assert np.allclose(res.solid.bounds[:, 2], (12.8 - 5, 12.8))
     assert res.context is not None
     assert np.allclose(res.context.bounds, [[0.25, 0.25, 0], [83.75, 41.75, 14]])
 
@@ -236,7 +237,10 @@ def test_cli_bin_options(tmp_path, capsys):
             "2",
             "3",
             "--bin-height",
-            "4",
+            "28",
+            "--bin-gridz-define",
+            "2",
+            "--no-bin-include-lip",
             "--rotation",
             "90",
             "-o",
@@ -244,7 +248,7 @@ def test_cli_bin_options(tmp_path, capsys):
         ]
     )
     assert rc == 0
-    assert "in a 2 x 3 x 4 u bin" in capsys.readouterr().out
+    assert "in a 2 x 3 u bin, gridz 28 (84 x 126 x 28 mm excl. lip" in capsys.readouterr().out
     mesh = load(stl)
     assert np.allclose(mesh.bounds[:, 2], (18, 28))
     assert np.allclose(mesh.extents[:2], (50, 30))

@@ -8,10 +8,23 @@ import pytest
 gr = pytest.importorskip("gradio")
 
 from gridfinity_cutter import ui
+from gridfinity_cutter.bins import BinParams
 from gridfinity_cutter.session import Session
 
 FIXTURE = Path(__file__).parent / "fixtures" / "box_cutter.jpg"
-VALUES = [5.0, True, 40, 0.2, 100, 0.5, 12.0, False, 1, 1, 3, 0.0, 0.0, 0.0]
+# px_per_mm, auto, threshold, tolerance, min_area, clearance, height, mirror, then the bin
+# defaults (backend "none": the handlers must not need OpenSCAD).
+VALUES = [5.0, True, 40, 0.2, 100, 0.5, 12.0, False] + [
+    getattr(BinParams(), name) for name in ui.BIN_CONTROL_NAMES
+]
+IDX = {name: i for i, name in enumerate(ui.CONTROL_NAMES)}
+
+
+def test_widget_specs_cover_every_bin_field():
+    assert [name for name, _, _ in ui.BIN_WIDGETS].count("units_x") == 1
+    assert {name for name, _, _ in ui.BIN_WIDGETS} == set(ui.BIN_CONTROL_NAMES)
+    assert {g for _, g, _ in ui.BIN_WIDGETS} == {k for k, _, _ in ui.BIN_ACCORDIONS}
+    assert ui.params_from_values(*VALUES).bin == BinParams()
 
 
 def test_build_app():
@@ -33,9 +46,9 @@ def test_handlers_end_to_end(tmp_path):
     img, thr, status = ui.on_image_input(session, *values)
     assert thr["interactive"] is True and "threshold 55 (fixed)" in status
 
-    values[8], values[9], values[13] = 2, 5, 30
+    values[IDX["units_x"]], values[IDX["units_y"]], values[IDX["rotation_deg"]] = 2, 5, 30
     img, thr, glb, status = ui.on_change(session, *values)
-    assert "bin 2 x 5 x 3 u" in status
+    assert "bin 2 x 5 u (42 mm grid), 84 x 210 x 21 mm excl. lip + lip" in status
 
     files, status = ui.on_export(session, str(tmp_path), "knife", *values)
     assert [Path(f).name for f in files] == ["knife.svg", "knife.stl", "knife.params.json"]
@@ -45,6 +58,10 @@ def test_handlers_report_errors():
     session = Session()
     _, _, status = ui.on_image_input(session, *VALUES)
     assert status.startswith("error:") and "load a photo" in status
+    bad = list(VALUES)
+    bad[IDX["magnet_holes"]] = True  # with refined holes: invalid combination
+    assert "error: refined_holes" in ui.on_change(session, *bad)[3]
+    assert "error: refined_holes" in ui.on_export(session, "", "x", *bad)[1]
     out = ui.on_load(session, None, *VALUES)
     assert "drop a photo" in out[-1]
 

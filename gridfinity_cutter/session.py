@@ -24,7 +24,7 @@ import trimesh
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from gridfinity_cutter import extrude, outline, sheet
-from gridfinity_cutter.bins import GRID_MM, BinResult
+from gridfinity_cutter.bins import BIN_GAP_MM, LIP_ZONE_MM, BinResult
 from gridfinity_cutter.params import ImageParams, Params
 from gridfinity_cutter.sheet import DEFAULT_SPEC, SheetSpec
 
@@ -36,6 +36,7 @@ COLOR_CLEARANCE = (170, 240, 120)
 COLOR_BIN = (60, 120, 255)
 COLOR_GRID = (150, 180, 255)
 CUTOUT_RGBA = (60, 190, 90, 255)
+BIN_RGBA = (190, 190, 196, 255)
 
 
 class SessionError(RuntimeError):
@@ -124,7 +125,8 @@ class Session:
         minx, miny, maxx, maxy = rotated.bounds
         w = maxx - minx + 2 * FIT_WALL_MM + 2 * abs(params.bin.offset_x_mm)
         d = maxy - miny + 2 * FIT_WALL_MM + 2 * abs(params.bin.offset_y_mm)
-        return (max(1, math.ceil(w / GRID_MM)), max(1, math.ceil(d / GRID_MM)))
+        g = params.bin.grid_mm
+        return (max(1, math.ceil(w / g)), max(1, math.ceil(d / g)))
 
     def build(self, params: Params) -> tuple[Polygon | MultiPolygon, BinResult]:
         """Placed outline in bin coordinates plus the backend's meshes."""
@@ -141,19 +143,16 @@ class Session:
         return place @ flip
 
     def bin_footprint_mm(self, params: Params) -> tuple[Polygon, list[LineString]]:
-        """Bin rectangle and its 42 mm grid lines drawn back onto the sheet (mm, y down)."""
+        """Bin rectangle and its grid lines drawn back onto the sheet (mm, y down)."""
         w, d, _ = params.bin.size_mm
+        g = params.bin.grid_mm
         inv = np.linalg.inv(self._photo_to_bin_matrix(params))
         rect = extrude.apply_matrix(box(0.0, 0.0, w, d), inv)
         lines = []
         for i in range(1, params.bin.units_x):
-            lines.append(
-                extrude.apply_matrix(LineString([(i * GRID_MM, 0), (i * GRID_MM, d)]), inv)
-            )
+            lines.append(extrude.apply_matrix(LineString([(i * g, 0), (i * g, d)]), inv))
         for j in range(1, params.bin.units_y):
-            lines.append(
-                extrude.apply_matrix(LineString([(0, j * GRID_MM), (w, j * GRID_MM)]), inv)
-            )
+            lines.append(extrude.apply_matrix(LineString([(0, j * g), (w, j * g)]), inv))
         return rect, lines
 
     # -- outputs --------------------------------------------------------------
@@ -199,23 +198,35 @@ class Session:
         return img
 
     def scene(self, params: Params) -> tuple[trimesh.Scene, BinResult]:
+        """Viewer scene: the finished bin (real backends) or the pocket plus a reference block."""
         _, res = self.build(params)
+        scene = trimesh.Scene()
+        if res.context is None and params.bin.backend != "none":
+            # Only the finished bin: drawing the pocket inside it would z-fight with the void.
+            solid = res.solid.copy()
+            solid.visual = trimesh.visual.ColorVisuals(
+                solid, vertex_colors=np.tile(BIN_RGBA, (len(solid.vertices), 1))
+            )
+            scene.add_geometry(solid, geom_name="bin")
+            return scene, res
         solid = res.solid.copy()
         solid.visual = trimesh.visual.ColorVisuals(
             solid, vertex_colors=np.tile(CUTOUT_RGBA, (len(solid.vertices), 1))
         )
-        scene = trimesh.Scene()
         scene.add_geometry(solid, geom_name="cutout")
         if res.context is not None:
             scene.add_geometry(res.context, geom_name="bin")
         return scene, res
 
-    def render(self, params: Params) -> Path:
-        """Write the viewer scene as GLB and return its path (fixed per session)."""
-        scene, _ = self.scene(params)
+    def render_scene(self, params: Params) -> tuple[Path, BinResult]:
+        """Write the viewer scene as GLB (fixed path per session) and return it with the result."""
+        scene, res = self.scene(params)
         path = self.workdir / "scene.glb"
         path.write_bytes(scene.export(file_type="glb"))
-        return path
+        return path, res
+
+    def render(self, params: Params) -> Path:
+        return self.render_scene(params)[0]
 
     def export(self, params: Params, out_dir: str | Path, stem: str) -> list[Path]:
         """Write ``<stem>.svg``, ``<stem>.stl`` (bin coordinates) and ``<stem>.params.json``."""
@@ -251,17 +262,39 @@ class Session:
                 f"{len(state.polygon_mm)} points"
             ),
         ]
-        bw, bd, bh = params.bin.size_mm
+        b = params.bin
+        bw, bd, bh = b.size_mm
+        top = b.pocket_top_mm
+        depth = params.geometry.height_mm
         lines.append(
-            f"bin {params.bin.units_x} x {params.bin.units_y} x {params.bin.units_z} u "
-            f"({bw:g} x {bd:g} x {bh:g} mm), pocket depth {params.geometry.height_mm:g} mm"
+            f"bin {b.units_x} x {b.units_y} u ({b.grid_mm:g} mm grid), "
+            f"{bw:g} x {bd:g} x {bh:g} mm excl. lip{' + lip' if b.include_lip else ''}, "
+            f"pocket {top - depth:g}..{top:g} mm, backend {b.backend}"
         )
-        if params.geometry.height_mm > bh:
-            lines.append("WARNING: pocket depth exceeds the bin height")
+        if depth > b.infill_height_mm:
+            lines.append(
+                "WARNING: pocket deeper than the solid part of the bin (cuts into the base)"
+            )
+        if self._near_wall(params):
+            lines.append(
+                f"WARNING: cutout within {LIP_ZONE_MM:g} mm of the bin wall (cuts the wall/lip)"
+            )
         if params.geometry.mirror:
             lines.append(
                 "mirror: bin footprint drawn as seen from below; +offset Y moves the object down on the photo"
             )
         if res is not None:
-            lines.append(f"cutout mesh: {len(res.solid.faces)} faces, {res.solid.volume:.0f} mm^3")
+            lines.append(f"STL: {len(res.solid.faces)} faces, {res.solid.volume:.0f} mm^3")
+            if res.note:
+                lines.append(res.note)
         return "  \n".join(lines)  # trailing double space = Markdown line break
+
+    def _near_wall(self, params: Params) -> bool:
+        """True when the placed (offset) outline comes closer than the lip zone to the bin body."""
+        geom = extrude.place_in_bin(
+            extrude.flip_y(self.offset_geometry(params), params.geometry.mirror), params.bin
+        )
+        minx, miny, maxx, maxy = geom.bounds
+        w, d, _ = params.bin.size_mm
+        edge = BIN_GAP_MM / 2 + LIP_ZONE_MM
+        return minx < edge or miny < edge or maxx > w - edge or maxy > d - edge

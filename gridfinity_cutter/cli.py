@@ -9,7 +9,7 @@ from typing import Any
 
 from gridfinity_cutter import extrude, outline, sheet
 from gridfinity_cutter.bins import BACKEND_NAMES, BinParams
-from gridfinity_cutter.params import Params, ParamsError
+from gridfinity_cutter.params import BIN_GENERIC_FIELDS, Params, ParamsError
 
 DEFAULT_UI_PORT = 7860
 
@@ -51,17 +51,18 @@ def _bin_from_args(args: argparse.Namespace) -> BinParams | None:
     return BinParams(
         units_x=int(ux),
         units_y=int(uy),
-        units_z=int(args.bin_height),
+        gridz=float(args.bin_height),
         offset_x_mm=ox,
         offset_y_mm=oy,
         rotation_deg=args.rotation,
         backend=args.bin_backend,
+        **{name: getattr(args, f"bin_{name}") for name in BIN_GENERIC_FIELDS},
     )
 
 
 def _run_extrude(args: argparse.Namespace, svg: str, stl: str) -> int:
-    bin_params = _bin_from_args(args)
     try:
+        bin_params = _bin_from_args(args)
         res = extrude.run(
             svg,
             stl,
@@ -80,8 +81,8 @@ def _run_extrude(args: argparse.Namespace, svg: str, stl: str) -> int:
     if bin_params is not None:
         bw, bd, bh = bin_params.size_mm
         where = (
-            f", in a {bin_params.units_x} x {bin_params.units_y} x {bin_params.units_z} u bin "
-            f"({bw:g} x {bd:g} x {bh:g} mm, backend {bin_params.backend})"
+            f", in a {bin_params.units_x} x {bin_params.units_y} u bin, gridz {bin_params.gridz:g} "
+            f"({bw:g} x {bd:g} x {bh:g} mm excl. lip, backend {bin_params.backend})"
         )
     print(
         f"wrote {stl}: {w:.1f} x {d:.1f} x {h:.1f} mm, {res.n_faces} faces, "
@@ -237,11 +238,40 @@ def _add_extrude_options(e: argparse.ArgumentParser) -> None:
     )
 
 
+# Help text for the generated --bin-* flags (the library's customizer comments).
+BIN_HELP: dict[str, str] = {
+    "gridz_define": "how --bin-height is read: 0 = 7 mm units, 1 = internal mm, "
+    "2 = external mm excl. lip, 3 = external mm incl. lip",
+    "enable_zsnap": "snap the height to the nearest 7 mm increment",
+    "height_internal_mm": "override the solid block height in mm (0 = default)",
+    "include_lip": "stacking lip on top (not included in the height)",
+    "half_grid": "half-size (21 mm) grid; implies --bin-only-corners",
+    "divx": "compartments along x cut by the library (0 = solid bin)",
+    "divy": "compartments along y cut by the library (0 = solid bin)",
+    "depth_mm": "compartment depth in mm (0 = full depth)",
+    "cut_cylinders": "cylindrical compartments instead of rectangular ones",
+    "cylinder_diameter_mm": "diameter of the cylindrical compartments",
+    "cylinder_chamfer_mm": "chamfer around the top rim of the cylinders",
+    "style_tab": "label tab: 0 full, 1 auto, 2 left, 3 center, 4 right, 5 none",
+    "place_tab": "tabs on: 0 every division, 1 top-left division only",
+    "scoop": "scoop weight 0..1 (0 disables)",
+    "only_corners": "magnet/screw holes only in the outer corners",
+    "refined_holes": "gridfinity-refined hole style (not with magnet holes)",
+    "magnet_holes": "holes for 6 x 2 mm magnets",
+    "screw_holes": "holes for M3 screws",
+    "crush_ribs": "crush ribs in the magnet holes",
+    "chamfer_holes": "chamfer on the magnet/screw holes",
+    "printable_hole_top": "hole tops printable without supports",
+    "enable_thumbscrew": "gridfinity-refined thumbscrew hole in each base",
+}
+
+
 def _add_bin_options(e: argparse.ArgumentParser) -> None:
     g = e.add_argument_group(
         "bin placement",
         "With --bin-units the STL is written in bin coordinates: x/y from the bin's "
-        "grid corner, z from the bin bottom, pocket sunk into the bin top.",
+        "grid corner, z from the bin bottom, pocket sunk into the bin's solid top. "
+        "With --bin-backend openscad the STL is the finished Gridfinity bin.",
     )
     g.add_argument(
         "--bin-units",
@@ -249,10 +279,14 @@ def _add_bin_options(e: argparse.ArgumentParser) -> None:
         nargs=2,
         metavar=("X", "Y"),
         default=None,
-        help="bin footprint in 42 mm Gridfinity units",
+        help="bin footprint in Gridfinity units",
     )
     g.add_argument(
-        "--bin-height", type=int, default=3, metavar="U", help="bin height in 7 mm units"
+        "--bin-height",
+        type=float,
+        default=3.0,
+        metavar="Z",
+        help="bin height (gridz); unit set by --bin-gridz-define (default: 7 mm units)",
     )
     g.add_argument(
         "--offset",
@@ -270,6 +304,31 @@ def _add_bin_options(e: argparse.ArgumentParser) -> None:
         help="rotate the cutout counter-clockwise (seen from above)",
     )
     g.add_argument("--bin-backend", choices=BACKEND_NAMES, default="none")
+    o = e.add_argument_group("bin options (Gridfinity Rebuilt)")
+    defaults = BinParams()
+    for name in BIN_GENERIC_FIELDS:
+        flag = "--bin-" + name.replace("_", "-")
+        dest = f"bin_{name}"
+        default = getattr(defaults, name)
+        help_text = f"{BIN_HELP[name]} (default %(default)s)"
+        if isinstance(default, bool):
+            o.add_argument(
+                flag,
+                dest=dest,
+                action=argparse.BooleanOptionalAction,
+                default=default,
+                help=help_text,
+            )
+        else:
+            metavar = "MM" if name.endswith("_mm") else "N"
+            o.add_argument(
+                flag,
+                dest=dest,
+                type=type(default),
+                default=default,
+                metavar=metavar,
+                help=help_text,
+            )
 
 
 def _params_defaults(argv: list[str] | None) -> dict[str, Any]:
