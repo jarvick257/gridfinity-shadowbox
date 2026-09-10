@@ -3,7 +3,14 @@ import json
 import pytest
 
 from gridfinity_cutter import cli
-from gridfinity_cutter.params import BinParams, GeometryParams, ImageParams, Params, ParamsError
+from gridfinity_cutter.params import (
+    BinParams,
+    GeometryParams,
+    ImageParams,
+    Params,
+    ParamsError,
+    ReliefParams,
+)
 
 
 def test_json_round_trip(tmp_path):
@@ -11,6 +18,7 @@ def test_json_round_trip(tmp_path):
         ImageParams(px_per_mm=8.0, threshold=None, tolerance_mm=0.3, min_area_mm2=50),
         GeometryParams(height_mm=12.5, clearance_mm=-0.4, mirror=True),
         BinParams(2, 3, 4, offset_x_mm=1.5, offset_y_mm=-2.0, rotation_deg=90),
+        ReliefParams(enabled=True, diameter_mm=18, count=2, angle_deg=45, inset_mm=3),
         photo="knife.jpg",
     )
     path = tmp_path / "p.json"
@@ -18,6 +26,9 @@ def test_json_round_trip(tmp_path):
     data = json.loads(path.read_text())
     assert data["image"]["threshold"] is None and data["bin"]["lip"] == "standard"
     assert Params.from_json(path) == p
+    assert data["relief"]["count"] == 2
+    with pytest.raises(ParamsError, match="relief"):
+        Params.from_dict({"relief": {"depth_mm": 3}})
 
 
 def test_defaults_and_errors(tmp_path):

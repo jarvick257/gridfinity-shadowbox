@@ -80,6 +80,12 @@ construction and bin minus pocket boolean). Optional extra `ui`: `gradio` (6.x; 
   superset (curves, basic shapes, transforms, `mm`/`px` units; unit-less = mm)
   so hand-drawn SVGs work. SVG y points down; `extrude` flips y so the STL seen
   from above matches the photo (`--mirror` disables that).
+- **Finger relief.** `extrude.ReliefParams` (params.json section `relief`, CLI
+  `--relief-*`, UI group "Finger relief") merges round scallops into the offset
+  outline in the SVG plane (`extrude.add_relief`, right after the clearance, full
+  pocket depth) so fingers can lift the object out. Everything downstream (fit,
+  placement, overlay, wall warning, bin boolean) just sees a bigger outline; the
+  dataclass lives in `extrude.py` because `params.py` must not be imported back.
 - **Bin coordinates.** With bin options (`--bin-units`, or always in the UI) the STL
   is written in bin coordinates: x/y from the bin's grid corner, z from the bin
   bottom, pocket sunk into the top of the bin's *solid part*

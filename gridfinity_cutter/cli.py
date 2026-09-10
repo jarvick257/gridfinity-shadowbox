@@ -59,9 +59,20 @@ def _bin_from_args(args: argparse.Namespace) -> BinParams | None:
     )
 
 
+def _relief_from_args(args: argparse.Namespace) -> extrude.ReliefParams:
+    return extrude.ReliefParams(
+        enabled=bool(args.relief),
+        diameter_mm=args.relief_diameter,
+        count=args.relief_count,
+        angle_deg=args.relief_angle,
+        inset_mm=args.relief_inset,
+    )
+
+
 def _run_extrude(args: argparse.Namespace, svg: str, stl: str) -> int:
     try:
         bin_params = _bin_from_args(args)
+        relief = _relief_from_args(args)
         res = extrude.run(
             svg,
             stl,
@@ -70,12 +81,15 @@ def _run_extrude(args: argparse.Namespace, svg: str, stl: str) -> int:
             mirror=args.mirror,
             curve_tolerance_mm=args.curve_tolerance,
             bin=bin_params,
+            relief=relief,
         )
     except (extrude.ExtrudeError, ValueError) as e:
         print(f"extrude: {e}", file=sys.stderr)
         return 1
     w, d, h = res.size_mm
     parts = f", {res.n_parts} parts" if res.n_parts > 1 else ""
+    if relief.enabled:
+        parts += f", finger relief {relief.count} x {relief.diameter_mm:g} mm"
     where = ""
     if bin_params is not None:
         bw, bd, bh = bin_params.size_mm
@@ -141,6 +155,7 @@ def build_parser(defaults: dict[str, Any] | None = None) -> argparse.ArgumentPar
     e.add_argument("-o", "--output", default="object.stl")
     _add_params_option(e)
     _add_extrude_options(e)
+    _add_relief_options(e)
     _add_bin_options(e)
     e.set_defaults(func=_cmd_extrude)
 
@@ -155,6 +170,7 @@ def build_parser(defaults: dict[str, Any] | None = None) -> argparse.ArgumentPar
     _add_params_option(r)
     _add_outline_options(r)
     _add_extrude_options(r)
+    _add_relief_options(r)
     _add_bin_options(r)
     r.set_defaults(func=_cmd_run)
 
@@ -234,6 +250,45 @@ def _add_extrude_options(e: argparse.ArgumentParser) -> None:
         type=float,
         default=extrude.DEFAULT_CURVE_TOLERANCE_MM,
         help="max chord error in mm when flattening curves (default %(default)s)",
+    )
+
+
+def _add_relief_options(e: argparse.ArgumentParser) -> None:
+    d = extrude.ReliefParams()
+    g = e.add_argument_group(
+        "finger relief",
+        "round scallops merged into the pocket edge (full depth) so fingers can lift the object out",
+    )
+    g.add_argument("--relief", action="store_true", help="add the finger relief")
+    g.add_argument(
+        "--relief-diameter",
+        type=float,
+        default=d.diameter_mm,
+        metavar="MM",
+        help="scallop diameter (default %(default)s)",
+    )
+    g.add_argument(
+        "--relief-count",
+        type=int,
+        default=d.count,
+        metavar="N",
+        help="number of scallops, evenly spaced (default %(default)s)",
+    )
+    g.add_argument(
+        "--relief-angle",
+        type=float,
+        default=d.angle_deg,
+        metavar="DEG",
+        help="direction of the first scallop from the outline centre on the photo: "
+        "0 = right, 90 = down (default %(default)s)",
+    )
+    g.add_argument(
+        "--relief-inset",
+        type=float,
+        default=d.inset_mm,
+        metavar="MM",
+        help="circle centre this far inside the outline edge; 0 = on the edge "
+        "(default %(default)s)",
     )
 
 

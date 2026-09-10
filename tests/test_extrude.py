@@ -259,3 +259,34 @@ def test_cli_bin_options(tmp_path, capsys, solid_at):
     # Rotated by 90 degrees the pocket is 50 mm along x.
     x, y = bin_.centre_mm
     assert not solid_at(mesh, x + 24, y, 27) and solid_at(mesh, x + 26, y, 27)
+
+
+def test_add_relief_geometry():
+    rect = shapely.box(0, 0, 40, 20)  # bbox centre (20, 10)
+    relief = extrude.ReliefParams(enabled=True, diameter_mm=10, count=1, angle_deg=0, inset_mm=2.5)
+    g = extrude.add_relief(rect, relief)
+    # circle centre at x = 40 - 2.5 = 37.5, radius 5 -> reaches x = 42.5
+    assert g.bounds == pytest.approx((0, 0, 42.5, 20), abs=0.05)
+    assert g.area > rect.area
+    assert extrude.add_relief(rect, extrude.ReliefParams()) is rect
+    two = extrude.add_relief(rect, extrude.ReliefParams(True, 10, 2, 90, 0))
+    assert two.bounds == pytest.approx((0, -5, 40, 25), abs=0.05)
+    assert two.centroid.x == pytest.approx(20)
+    with pytest.raises(extrude.ExtrudeError):
+        extrude.add_relief(rect, extrude.ReliefParams(True, 0, 1))
+
+
+def test_cli_relief(tmp_path, capsys):
+    stl = tmp_path / "o.stl"
+    args = ["extrude", str(rect_svg(tmp_path)), "--height", "5", "-o", str(stl)]
+    assert cli.main(args) == 0
+    plain = load(stl).volume
+    assert (
+        cli.main(
+            args
+            + ["--relief", "--relief-diameter", "10", "--relief-count", "2", "--relief-inset", "2"]
+        )
+        == 0
+    )
+    assert "finger relief 2 x 10 mm" in capsys.readouterr().out
+    assert load(stl).volume > plain

@@ -31,8 +31,8 @@ from gridfinity_cutter.sheet import DEFAULT_SPEC, SheetSpec
 OVERLAY_MARGIN_MM = 12.0  # photo shown around the work area
 DISPLAY_PX_PER_MM = 3.0
 FIT_WALL_MM = 4.0  # free space kept between cutout and bin edge when auto-sizing
-COLOR_OUTLINE = (40, 200, 60)  # RGB
-COLOR_CLEARANCE = (170, 240, 120)
+COLOR_OUTLINE = (230, 60, 20)  # RGB; must stay legible on white paper
+COLOR_CLEARANCE = (170, 0, 170)  # offset outline incl. finger relief
 COLOR_BIN = (60, 120, 255)
 COLOR_GRID = (150, 180, 255)
 BIN_RGBA = (190, 190, 196, 255)
@@ -113,9 +113,10 @@ class Session:
     def offset_geometry(self, params: Params) -> Polygon | MultiPolygon:
         """Outline with clearance applied, still in the SVG plane (sheet mm, y down)."""
         state = self.outline(params.image)
-        return extrude.offset_polygon(
+        geom = extrude.offset_polygon(
             extrude.from_polygon(state.polygon_mm), params.geometry.clearance_mm
         )
+        return extrude.add_relief(geom, params.relief)
 
     def fit_bin(self, params: Params) -> tuple[int, int]:
         """Smallest bin (units x, y) that holds the rotated, offset outline with a wall."""
@@ -185,7 +186,7 @@ class Session:
             for ln in lines:
                 cv2.polylines(img, [px(ln.coords)], False, COLOR_GRID, 1, cv2.LINE_AA)
             cv2.polylines(img, [px(rect.exterior.coords)], True, COLOR_BIN, 2, cv2.LINE_AA)
-            if params.geometry.clearance_mm != 0.0:
+            if params.geometry.clearance_mm != 0.0 or params.relief.enabled:
                 geom = self.offset_geometry(params)
                 for part in getattr(geom, "geoms", [geom]):
                     cv2.polylines(
@@ -232,7 +233,7 @@ class Session:
             f"tolerance_mm={params.image.tolerance_mm:g} threshold={state.threshold:.1f}",
         )
         mesh.export(str(stl))
-        Params(params.image, params.geometry, params.bin, photo=photo).to_json(js)
+        Params(params.image, params.geometry, params.bin, params.relief, photo=photo).to_json(js)
         return [svg, stl, js]
 
     def status(self, params: Params, mesh: trimesh.Trimesh | None = None) -> str:
@@ -260,6 +261,9 @@ class Session:
             f"{bw:g} x {bd:g} x {bh:g} mm excl. lip{' + lip' if b.has_lip else ''}, "
             f"pocket {top - depth:g}..{top:g} mm"
         )
+        r = params.relief
+        if r.enabled:
+            lines.append(f"finger relief: {r.count} x {r.diameter_mm:g} mm at {r.angle_deg:g} deg")
         if depth > b.infill_height_mm:
             lines.append(
                 "WARNING: pocket deeper than the solid part of the bin (cuts into the base)"

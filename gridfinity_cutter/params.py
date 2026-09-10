@@ -18,6 +18,7 @@ from typing import Any
 
 from gridfinity_cutter import extrude, outline
 from gridfinity_cutter.bins import BinParams
+from gridfinity_cutter.extrude import ReliefParams
 
 __all__ = [
     "BIN_GENERIC_FIELDS",
@@ -26,6 +27,7 @@ __all__ = [
     "ImageParams",
     "Params",
     "ParamsError",
+    "ReliefParams",
 ]
 
 # BinParams fields with their own CLI flags; every other field gets a generated
@@ -63,6 +65,7 @@ class Params:
     image: ImageParams = field(default_factory=ImageParams)
     geometry: GeometryParams = field(default_factory=GeometryParams)
     bin: BinParams = field(default_factory=BinParams)
+    relief: ReliefParams = field(default_factory=ReliefParams)
     photo: str | None = None  # file name of the photo the parameters were tuned on
 
     # -- JSON ---------------------------------------------------------------
@@ -77,7 +80,12 @@ class Params:
     def from_dict(cls, data: dict[str, Any]) -> Params:
         if not isinstance(data, dict):
             raise ParamsError("params must be a JSON object")
-        sections = {"image": ImageParams, "geometry": GeometryParams, "bin": BinParams}
+        sections = {
+            "image": ImageParams,
+            "geometry": GeometryParams,
+            "bin": BinParams,
+            "relief": ReliefParams,
+        }
         unknown = set(data) - set(sections) - {"photo"}
         if unknown:
             raise ParamsError(f"unknown top-level key(s): {sorted(unknown)}")
@@ -100,8 +108,13 @@ class Params:
 
     def to_cli_defaults(self) -> dict[str, Any]:
         """Values keyed by argparse ``dest`` names of the ``extrude``/``run`` subcommands."""
-        i, g, b = self.image, self.geometry, self.bin
+        i, g, b, r = self.image, self.geometry, self.bin, self.relief
         return {
+            "relief": r.enabled,
+            "relief_diameter": r.diameter_mm,
+            "relief_count": r.count,
+            "relief_angle": r.angle_deg,
+            "relief_inset": r.inset_mm,
             "px_per_mm": i.px_per_mm,
             "threshold": i.threshold,
             "tolerance": i.tolerance_mm,

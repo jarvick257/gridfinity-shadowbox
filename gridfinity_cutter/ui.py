@@ -25,7 +25,13 @@ import gradio as gr
 
 from gridfinity_cutter import extrude, outline, sheet
 from gridfinity_cutter.bins import LIP_STYLES
-from gridfinity_cutter.params import BinParams, GeometryParams, ImageParams, Params
+from gridfinity_cutter.params import (
+    BinParams,
+    GeometryParams,
+    ImageParams,
+    Params,
+    ReliefParams,
+)
 from gridfinity_cutter.session import Session, SessionError
 
 TITLE = "gridfinity-cutter"
@@ -42,6 +48,11 @@ OTHER_CONTROL_NAMES = (
     "clearance",
     "height",
     "mirror",
+    "relief",
+    "relief_diameter",
+    "relief_count",
+    "relief_angle",
+    "relief_inset",
 )
 BIN_CONTROL_NAMES = tuple(f.name for f in fields(BinParams))
 CONTROL_NAMES = OTHER_CONTROL_NAMES + BIN_CONTROL_NAMES
@@ -68,6 +79,13 @@ def params_from_values(*values) -> Params:
             mirror=bool(v["mirror"]),
         ),
         bin=bin_from_values(v),
+        relief=ReliefParams(
+            enabled=bool(v["relief"]),
+            diameter_mm=float(v["relief_diameter"]),
+            count=int(v["relief_count"]),
+            angle_deg=float(v["relief_angle"]),
+            inset_mm=float(v["relief_inset"]),
+        ),
     )
 
 
@@ -286,6 +304,27 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
                 clearance = gr.Number(label="Clearance (mm, negative shrinks)", value=0.0, step=0.1)
                 height = gr.Number(label="Pocket depth (mm)", value=10.0, minimum=0.1, step=0.5)
                 mirror = gr.Checkbox(label="Mirror (object goes in upside down)", value=False)
+                gr.Markdown("**Finger relief**")
+                r0 = ReliefParams()
+                relief = gr.Checkbox(
+                    label="Add finger relief (scallop at the pocket edge)", value=False
+                )
+                relief_diameter = gr.Number(
+                    label="Diameter (mm)", value=r0.diameter_mm, minimum=1, step=1
+                )
+                relief_count = gr.Number(
+                    label="Count (evenly spaced)", value=r0.count, minimum=1, maximum=4, step=1
+                )
+                relief_angle = gr.Slider(
+                    label="Angle (deg, 0 = right, 90 = down on the photo)",
+                    minimum=-180,
+                    maximum=180,
+                    step=5,
+                    value=r0.angle_deg,
+                )
+                relief_inset = gr.Number(
+                    label="Inset from edge (mm)", value=r0.inset_mm, minimum=0, step=0.5
+                )
                 gr.Markdown("**Bin**")
                 bin_widgets = build_bin_widgets(BinParams())
                 gr.Markdown("**Export**")
@@ -317,6 +356,11 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
             clearance,
             height,
             mirror,
+            relief,
+            relief_diameter,
+            relief_count,
+            relief_angle,
+            relief_inset,
             *(bin_widgets[name] for name in BIN_CONTROL_NAMES),
         ]
         assert len(controls) == len(CONTROL_NAMES)
@@ -348,7 +392,8 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
             mirror.input,
             render_btn.click,
         ]
-        for w in (clearance, height, *bin_widgets.values()):
+        relief_widgets = (relief, relief_diameter, relief_count, relief_angle, relief_inset)
+        for w in (clearance, height, *relief_widgets, *bin_widgets.values()):
             settle += settle_events(w)
         for ev in settle:
             ev(bind(on_change), controls, all_out, concurrency_limit=1, **always)

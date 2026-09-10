@@ -9,7 +9,13 @@ import shapely
 import trimesh
 
 from gridfinity_cutter import cli, extrude
-from gridfinity_cutter.params import BinParams, GeometryParams, ImageParams, Params
+from gridfinity_cutter.params import (
+    BinParams,
+    GeometryParams,
+    ImageParams,
+    Params,
+    ReliefParams,
+)
 from gridfinity_cutter.session import COLOR_BIN, COLOR_OUTLINE, Session, SessionError
 
 FIXTURE = Path(__file__).parent / "fixtures" / "box_cutter.jpg"
@@ -24,10 +30,12 @@ def session():
 
 
 def params(**kw) -> Params:
+    kw_relief = kw.pop("relief", ReliefParams())
     return Params(
         ImageParams(px_per_mm=PX_PER_MM),
         GeometryParams(height_mm=kw.pop("height_mm", 12.0), clearance_mm=kw.pop("clearance", 0.0)),
         BinParams(**kw),
+        kw_relief,
     )
 
 
@@ -144,3 +152,22 @@ def test_scene_with_holes_and_export(session, tmp_path):
     rc = cli.main(["run", str(FIXTURE), "--params", str(js), "-o", str(tmp_path / "cli.stl")])
     assert rc == 0
     assert abs(trimesh.load(str(tmp_path / "cli.stl")).volume - mesh.volume) < 1e-3 * mesh.volume
+
+
+def test_relief_grows_pocket_and_reproduces(session, tmp_path):
+    base = params(units_x=2, units_y=3, height_mm=8)
+    relief = ReliefParams(enabled=True, diameter_mm=16, count=2, angle_deg=90, inset_mm=4)
+    p = params(units_x=2, units_y=3, height_mm=8, relief=relief)
+    assert session.offset_geometry(p).area > session.offset_geometry(base).area
+    _, m0 = session.build(base)
+    _, m1 = session.build(p)
+    assert m1.volume < m0.volume and m1.is_watertight
+    assert "finger relief: 2 x 16 mm" in session.status(p)
+    assert session.overlay(p).shape == session.overlay(base).shape
+
+    _, _, js = session.export(p, tmp_path / "out", "r")
+    assert json.loads(js.read_text())["relief"]["enabled"] is True
+    rc = cli.main(["run", str(FIXTURE), "--params", str(js), "-o", str(tmp_path / "cli.stl")])
+    assert rc == 0
+    cli_mesh = trimesh.load(str(tmp_path / "cli.stl"))
+    assert abs(cli_mesh.volume - m1.volume) / m1.volume < 1e-3

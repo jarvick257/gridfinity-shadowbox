@@ -30,6 +30,12 @@ Clearance
 a looser pocket; negative values shrink the outline, which also compensates the
 parallax of a tall object photographed from close range (see the outline step).
 
+Finger relief
+-------------
+``ReliefParams`` merges round scallops into the outline at its edge (full pocket
+depth) so a finger can reach the object's side and lift it out. Applied after the
+clearance in the SVG plane, so it rotates/mirrors with the object.
+
 Bin placement
 -------------
 With ``bin=BinParams(...)`` the solid is written in *bin coordinates* instead:
@@ -49,7 +55,7 @@ from pathlib import Path
 import numpy as np
 import shapely
 import trimesh
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from svgelements import SVG, Close, Line, Move
 from svgelements import Path as SvgPath
 from svgelements import Shape as SvgShape
@@ -64,6 +70,23 @@ BUFFER_QUAD_SEGS = 16
 # svgelements converts mm with the rounded factor 0.0393701 in/mm; using its exact
 # reciprocal as the ppi makes 1 mm == 1 user unit with no rounding error.
 _SVGELEMENTS_MM_PPI = 1.0 / 0.0393701
+
+
+@dataclass(frozen=True)
+class ReliefParams:
+    """Round scallops merged into the outline edge so fingers can grip the object.
+
+    ``angle_deg`` is measured from the outline's bounding-box centre in the SVG
+    plane (0 = right, 90 = down on the photo); ``count`` scallops are spaced
+    evenly around. ``inset_mm`` moves the circle centre from the outline edge
+    towards the centre (0 = centred on the edge).
+    """
+
+    enabled: bool = False
+    diameter_mm: float = 20.0
+    count: int = 1
+    angle_deg: float = 0.0
+    inset_mm: float = 5.0
 
 
 class ExtrudeError(RuntimeError):
@@ -199,6 +222,30 @@ def offset_polygon(geom: Polygon | MultiPolygon, clearance_mm: float) -> Polygon
     return geom.simplify(SIMPLIFY_MM, preserve_topology=True)
 
 
+def add_relief(geom: Polygon | MultiPolygon, relief: ReliefParams | None) -> Polygon | MultiPolygon:
+    """Union finger-relief circles into the outline (SVG plane, y down)."""
+    if relief is None or not relief.enabled:
+        return geom
+    if relief.diameter_mm <= 0 or relief.count < 1:
+        raise ExtrudeError("finger relief needs a positive diameter and count >= 1")
+    minx, miny, maxx, maxy = geom.bounds
+    cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
+    reach = math.hypot(maxx - minx, maxy - miny)
+    boundary = geom.boundary
+    for k in range(relief.count):
+        a = math.radians(relief.angle_deg + k * 360.0 / relief.count)
+        dx, dy = math.cos(a), math.sin(a)
+        ray = LineString([(cx, cy), (cx + dx * reach, cy + dy * reach)])
+        hits = ray.intersection(boundary)
+        pts = [g for g in getattr(hits, "geoms", [hits]) if isinstance(g, Point)]
+        if not pts:
+            raise ExtrudeError(f"finger relief at {math.degrees(a):g} deg does not hit the outline")
+        hit = max(pts, key=lambda p: (p.x - cx) ** 2 + (p.y - cy) ** 2)
+        centre = Point(hit.x - dx * relief.inset_mm, hit.y - dy * relief.inset_mm)
+        geom = geom.union(centre.buffer(relief.diameter_mm / 2, quad_segs=BUFFER_QUAD_SEGS))
+    return geom.simplify(SIMPLIFY_MM, preserve_topology=True)
+
+
 def from_polygon(points_mm: np.ndarray) -> Polygon | MultiPolygon:
     """(N, 2) closed polygon in mm (SVG axes, y down) -> shapely geometry.
 
@@ -316,9 +363,11 @@ def run(
     mirror: bool = False,
     curve_tolerance_mm: float = DEFAULT_CURVE_TOLERANCE_MM,
     bin: BinParams | None = None,
+    relief: ReliefParams | None = None,
 ) -> ExtrudeResult:
     """SVG -> STL. With ``bin`` the solid is in bin coordinates (see ``bins``)."""
     geom = offset_polygon(load_polygons(svg, curve_tolerance_mm), clearance_mm)
+    geom = add_relief(geom, relief)
     if bin is None:
         mesh = to_mesh(geom, height_mm, mirror=mirror)
     else:

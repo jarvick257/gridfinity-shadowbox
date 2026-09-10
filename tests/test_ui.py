@@ -12,9 +12,9 @@ from gridfinity_cutter.bins import BinParams
 from gridfinity_cutter.session import Session
 
 FIXTURE = Path(__file__).parent / "fixtures" / "box_cutter.jpg"
-# px_per_mm, auto, threshold, tolerance, min_area, clearance, height, mirror, then the bin
-# defaults.
-VALUES = [5.0, True, 40, 0.2, 100, 0.5, 12.0, False] + [
+# px_per_mm, auto, threshold, tolerance, min_area, clearance, height, mirror, relief
+# (enabled, diameter, count, angle, inset), then the bin defaults.
+VALUES = [5.0, True, 40, 0.2, 100, 0.5, 12.0, False, True, 15.0, 2, 90.0, 4.0] + [
     getattr(BinParams(), name) for name in ui.BIN_CONTROL_NAMES
 ]
 IDX = {name: i for i, name in enumerate(ui.CONTROL_NAMES)}
@@ -72,3 +72,14 @@ def test_print_sheet_js_embeds_sheet():
     js = ui.print_sheet_js(sheet.DEFAULT_SPEC)
     assert js.startswith("() =>") and "print()" in js
     assert "@page{size:210mm 297mm;margin:0}" in js
+
+
+def test_params_from_values_relief():
+    r = ui.params_from_values(*VALUES).relief
+    assert (r.enabled, r.diameter_mm, r.count, r.angle_deg, r.inset_mm) == (
+        True,
+        15.0,
+        2,
+        90.0,
+        4.0,
+    )
