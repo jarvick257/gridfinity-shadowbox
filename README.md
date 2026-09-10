@@ -7,6 +7,8 @@ Put the thing on a printed reference sheet, take one photo from above, drop it
 into the web UI, and adjust the pocket until it looks right — then export the
 STL.
 
+![The web UI: a pen on the reference sheet, its detected outline, and the finished bin](docs/ui-screenshot.png)
+
 ## Install
 
 Needs [uv](https://docs.astral.sh/uv/) and Python 3.12+.
