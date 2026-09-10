@@ -23,10 +23,10 @@ import shapely
 import trimesh
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
-from gridfinity_cutter import extrude, outline, sheet
-from gridfinity_cutter.bins import BIN_GAP_MM, LIP_ZONE_MM
-from gridfinity_cutter.params import ImageParams, Params
-from gridfinity_cutter.sheet import DEFAULT_SPEC, SheetSpec
+from gridfinity_shadowbox import extrude, outline, sheet
+from gridfinity_shadowbox.bins import BIN_GAP_MM, LIP_ZONE_MM
+from gridfinity_shadowbox.params import ImageParams, Params
+from gridfinity_shadowbox.sheet import DEFAULT_SPEC, SheetSpec
 
 OVERLAY_MARGIN_MM = 12.0  # photo shown around the work area
 DISPLAY_PX_PER_MM = 3.0
@@ -57,7 +57,7 @@ class Session:
         self.warped: np.ndarray | None = None
         self.features: outline.PaperFeatures | None = None
         self.reprojection_error_mm: float | None = None
-        self.workdir = Path(tempfile.mkdtemp(prefix="gridfinity-cutter-"))
+        self.workdir = Path(tempfile.mkdtemp(prefix="shadowbox-"))
         self._outline: OutlineState | None = None
         self._lock = threading.Lock()
 
@@ -229,7 +229,7 @@ class Session:
         outline.write_svg(
             svg,
             state.polygon_mm,
-            f"gridfinity-cutter outline of {photo}; px_per_mm={params.image.px_per_mm:g} "
+            f"shadowbox outline of {photo}; px_per_mm={params.image.px_per_mm:g} "
             f"tolerance_mm={params.image.tolerance_mm:g} threshold={state.threshold:.1f}",
         )
         mesh.export(str(stl))

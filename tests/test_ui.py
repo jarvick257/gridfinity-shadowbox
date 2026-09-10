@@ -7,9 +7,9 @@ import pytest
 
 gr = pytest.importorskip("gradio")
 
-from gridfinity_cutter import ui
-from gridfinity_cutter.bins import BinParams
-from gridfinity_cutter.session import Session
+from gridfinity_shadowbox import ui
+from gridfinity_shadowbox.bins import BinParams
+from gridfinity_shadowbox.session import Session
 
 FIXTURE = Path(__file__).parent / "fixtures" / "box_cutter.jpg"
 # px_per_mm, auto, threshold, tolerance, min_area, clearance, height, mirror, relief
@@ -67,7 +67,7 @@ def test_handlers_report_errors():
 
 
 def test_print_sheet_js_embeds_sheet():
-    from gridfinity_cutter import sheet
+    from gridfinity_shadowbox import sheet
 
     js = ui.print_sheet_js(sheet.DEFAULT_SPEC)
     assert js.startswith("() =>") and "print()" in js

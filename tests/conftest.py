@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from shapely.geometry import Point, Polygon
 
-from gridfinity_cutter.bins.geometry import to_manifold
+from gridfinity_shadowbox.bins.geometry import to_manifold
 
 
 @pytest.fixture

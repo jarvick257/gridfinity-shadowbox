@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from gridfinity_cutter import sheet
+from gridfinity_shadowbox import sheet
 
 SPEC = sheet.SheetSpec()
 

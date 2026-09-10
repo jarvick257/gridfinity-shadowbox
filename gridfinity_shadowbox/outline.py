@@ -24,8 +24,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from gridfinity_cutter import sheet
-from gridfinity_cutter.sheet import DEFAULT_SPEC, SheetSpec
+from gridfinity_shadowbox import sheet
+from gridfinity_shadowbox.sheet import DEFAULT_SPEC, SheetSpec
 
 DEFAULT_PX_PER_MM = 10.0
 DEFAULT_TOLERANCE_MM = 0.2
@@ -345,7 +345,7 @@ def run(
         cv2.imwrite(str(dbg / "contour.png"), vis)
 
     comment = (
-        f"gridfinity-cutter outline of {Path(image).name}; px_per_mm={px_per_mm:g} "
+        f"shadowbox outline of {Path(image).name}; px_per_mm={px_per_mm:g} "
         f"tolerance_mm={tolerance_mm:g} threshold={thr:.1f} reprojection_error_mm={err:.2f}"
     )
     write_svg(output, polygon, comment)
@@ -353,6 +353,6 @@ def run(
 
 
 if __name__ == "__main__":
-    from gridfinity_cutter.cli import main
+    from gridfinity_shadowbox.cli import main
 
     sys.exit(main(["outline", *sys.argv[1:]]))

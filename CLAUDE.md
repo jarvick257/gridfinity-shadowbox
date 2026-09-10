@@ -18,7 +18,7 @@ the intended design so implementation stays consistent with it.
 ## Planned layout
 
 ```
-gridfinity_cutter/
+gridfinity_shadowbox/
   sheet.py      # generate the printable reference sheet (PDF/SVG), known geometry
   outline.py    # photo -> outline SVG
   extrude.py    # SVG -> STL, incl. placement inside a bin
@@ -27,11 +27,11 @@ gridfinity_cutter/
   params.py     # params.json schema (ImageParams/GeometryParams/BinParams), CLI defaults
   session.py    # UI logic without any web framework: cached warp, overlay, GLB scene, export
   ui.py         # Gradio layer only (optional extra `ui`); wires widgets to session.py
-  cli.py        # entry points: gridfinity-cutter sheet|outline|extrude|run|ui
+  cli.py        # entry points: shadowbox sheet|outline|extrude|run|ui
 tests/
 ```
 
-Each step is a standalone CLI (`python -m gridfinity_cutter.outline photo.jpg -o out.svg`)
+Each step is a standalone CLI (`python -m gridfinity_shadowbox.outline photo.jpg -o out.svg`)
 so users can inspect and hand-edit the intermediate SVG before extruding.
 
 ## Environment and commands
@@ -41,13 +41,13 @@ Use `uv` (installed; the venv is Python 3.12):
 ```
 uv sync                          # create venv, install deps
 uv sync --extra ui               # additionally install Gradio for the web UI
-uv run gridfinity-cutter sheet -o sheet.pdf
-uv run gridfinity-cutter outline photo.jpg -o object.svg
-uv run gridfinity-cutter extrude object.svg --height 20 -o object.stl
-uv run gridfinity-cutter run photo.jpg --height 20 -o object.stl   # outline + extrude, keeps object.svg
-uv run gridfinity-cutter extrude object.svg --params object.params.json -o object.stl  # reproduce a UI session
-uv run gridfinity-cutter extrude object.svg --height 20 --bin-units 2 2 -o bin.stl  # finished bin with pocket
-uv run gridfinity-cutter ui photo.jpg   # interactive UI on http://127.0.0.1:7860
+uv run shadowbox sheet -o sheet.pdf
+uv run shadowbox outline photo.jpg -o object.svg
+uv run shadowbox extrude object.svg --height 20 -o object.stl
+uv run shadowbox run photo.jpg --height 20 -o object.stl   # outline + extrude, keeps object.svg
+uv run shadowbox extrude object.svg --params object.params.json -o object.stl  # reproduce a UI session
+uv run shadowbox extrude object.svg --height 20 --bin-units 2 2 -o bin.stl  # finished bin with pocket
+uv run shadowbox ui photo.jpg   # interactive UI on http://127.0.0.1:7860
 uv run pytest                    # all tests (UI tests skip without the ui extra)
 uv run pytest tests/test_outline.py -k calibration   # single test
 uv run ruff check . && uv run ruff format .

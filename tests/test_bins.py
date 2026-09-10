@@ -2,7 +2,7 @@
 
 import pytest
 
-from gridfinity_cutter.bins import BinParams
+from gridfinity_shadowbox.bins import BinParams
 
 
 @pytest.mark.parametrize(

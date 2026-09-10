@@ -6,14 +6,14 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from gridfinity_cutter import extrude
-from gridfinity_cutter.bins import (
+from gridfinity_shadowbox import extrude
+from gridfinity_shadowbox.bins import (
     BASE_PROFILE_HEIGHT_MM,
     LIP_STYLES,
     BinParams,
     lip_height_mm,
 )
-from gridfinity_cutter.bins import geometry as nat
+from gridfinity_shadowbox.bins import geometry as nat
 
 
 def _slice_polys(p: BinParams, z: float) -> list:

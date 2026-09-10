@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
-from gridfinity_cutter import outline, sheet
+from gridfinity_shadowbox import outline, sheet
 
 SPEC = sheet.SheetSpec()
 FIXTURE = Path(__file__).parent / "fixtures" / "box_cutter.jpg"

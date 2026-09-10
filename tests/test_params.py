@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from gridfinity_cutter import cli
-from gridfinity_cutter.params import (
+from gridfinity_shadowbox import cli
+from gridfinity_shadowbox.params import (
     BinParams,
     GeometryParams,
     ImageParams,

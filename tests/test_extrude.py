@@ -6,10 +6,10 @@ import pytest
 import shapely
 import trimesh
 
-from gridfinity_cutter import cli, extrude, outline
-from gridfinity_cutter.bins import BinParams
-from gridfinity_cutter.bins.geometry import bin_mesh
-from gridfinity_cutter.bins.geometry import bin_with_pocket as build_bin
+from gridfinity_shadowbox import cli, extrude, outline
+from gridfinity_shadowbox.bins import BinParams
+from gridfinity_shadowbox.bins.geometry import bin_mesh
+from gridfinity_shadowbox.bins.geometry import bin_with_pocket as build_bin
 
 FIXTURE = Path(__file__).parent / "fixtures" / "box_cutter.jpg"
 RECT = np.array([[30.0, 40.0], [60.0, 40.0], [60.0, 90.0], [30.0, 90.0]])  # 30 x 50 mm

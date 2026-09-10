@@ -16,9 +16,9 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
-from gridfinity_cutter import extrude, outline
-from gridfinity_cutter.bins import BinParams
-from gridfinity_cutter.extrude import ReliefParams
+from gridfinity_shadowbox import extrude, outline
+from gridfinity_shadowbox.bins import BinParams
+from gridfinity_shadowbox.extrude import ReliefParams
 
 __all__ = [
     "BIN_GENERIC_FIELDS",

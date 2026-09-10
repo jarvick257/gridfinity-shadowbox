@@ -1,7 +1,7 @@
 """The Gridfinity bin solid, built with manifold3d, and the pocket boolean.
 
 Geometry follows the Gridfinity spec as encoded in Gridfinity Rebuilt's
-``standard.scad`` (constants in :mod:`gridfinity_cutter.bins`): per-cell base
+``standard.scad`` (constants in :mod:`gridfinity_shadowbox.bins`): per-cell base
 profile, bridge, solid body, optional stacking lip and base holes. Every piece is a
 convex hull of rounded rectangles at two heights or a cylinder/box, so the whole
 bin is a handful of booleans and renders in milliseconds. The bin (without the
@@ -19,8 +19,8 @@ import numpy as np
 import trimesh
 from shapely.geometry import MultiPolygon, Polygon
 
-from gridfinity_cutter import extrude
-from gridfinity_cutter.bins import (
+from gridfinity_shadowbox import extrude
+from gridfinity_shadowbox.bins import (
     BASE_HEIGHT_MM,
     BASE_PROFILE_HEIGHT_MM,
     BASE_PROFILE_MM,

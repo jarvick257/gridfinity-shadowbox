@@ -8,15 +8,15 @@ import pytest
 import shapely
 import trimesh
 
-from gridfinity_cutter import cli, extrude
-from gridfinity_cutter.params import (
+from gridfinity_shadowbox import cli, extrude
+from gridfinity_shadowbox.params import (
     BinParams,
     GeometryParams,
     ImageParams,
     Params,
     ReliefParams,
 )
-from gridfinity_cutter.session import COLOR_BIN, COLOR_OUTLINE, Session, SessionError
+from gridfinity_shadowbox.session import COLOR_BIN, COLOR_OUTLINE, Session, SessionError
 
 FIXTURE = Path(__file__).parent / "fixtures" / "box_cutter.jpg"
 PX_PER_MM = 5.0

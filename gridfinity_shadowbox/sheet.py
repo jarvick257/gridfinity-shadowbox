@@ -170,7 +170,7 @@ def sheet_elements(spec: SheetSpec = DEFAULT_SPEC) -> list[Element]:
         Text(
             page_w / 2,
             page_h - spec.margin_mm / 2,
-            "gridfinity-cutter reference sheet - print at 100% / actual size, do not fit to page. "
+            "gridfinity-shadowbox reference sheet - print at 100% / actual size, do not fit to page. "
             f"Markers: {spec.marker_ids[0]} TL, {spec.marker_ids[1]} TR, "
             f"{spec.marker_ids[2]} BR, {spec.marker_ids[3]} BL. Paper: {spec.paper.upper()}.",
             8,
@@ -268,7 +268,7 @@ def render_print_html(spec: SheetSpec = DEFAULT_SPEC) -> str:
     page_w, page_h = spec.page_mm
     return (
         "<!doctype html><html><head><meta charset='utf-8'>"
-        f"<title>gridfinity-cutter reference sheet ({spec.paper.upper()})</title>"
+        f"<title>gridfinity-shadowbox reference sheet ({spec.paper.upper()})</title>"
         "<style>"
         f"@page{{size:{_g(page_w)}mm {_g(page_h)}mm;margin:0}}"
         "html,body{margin:0;padding:0;background:#fff}"

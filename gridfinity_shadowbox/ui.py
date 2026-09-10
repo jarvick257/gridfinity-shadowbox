@@ -23,18 +23,18 @@ from pathlib import Path
 
 import gradio as gr
 
-from gridfinity_cutter import extrude, outline, sheet
-from gridfinity_cutter.bins import LIP_STYLES
-from gridfinity_cutter.params import (
+from gridfinity_shadowbox import extrude, outline, sheet
+from gridfinity_shadowbox.bins import LIP_STYLES
+from gridfinity_shadowbox.params import (
     BinParams,
     GeometryParams,
     ImageParams,
     Params,
     ReliefParams,
 )
-from gridfinity_cutter.session import Session, SessionError
+from gridfinity_shadowbox.session import Session, SessionError
 
-TITLE = "gridfinity-cutter"
+TITLE = "gridfinity-shadowbox"
 Errors = (outline.OutlineError, extrude.ExtrudeError, SessionError, ValueError)
 
 # Order of the plain widget values every handler receives after the session:

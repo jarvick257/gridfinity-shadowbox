@@ -1,5 +1,5 @@
 [project]
-name = "gridfinity-cutter"
+name = "gridfinity-shadowbox"
 version = "0.1.0"
 description = "Photo of an object -> outline SVG -> Gridfinity cutout STL"
 requires-python = ">=3.12"
@@ -18,7 +18,7 @@ dependencies = [
 ui = ["gradio>=6,<7"]
 
 [project.scripts]
-gridfinity-cutter = "gridfinity_cutter.cli:main"
+shadowbox = "gridfinity_shadowbox.cli:main"
 
 [dependency-groups]
 dev = ["pytest", "ruff"]
@@ -28,7 +28,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["gridfinity_cutter"]
+packages = ["gridfinity_shadowbox"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

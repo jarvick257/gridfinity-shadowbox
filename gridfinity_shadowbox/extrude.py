@@ -41,7 +41,7 @@ Bin placement
 With ``bin=BinParams(...)`` the solid is written in *bin coordinates* instead:
 the outline is rotated and moved inside a Gridfinity bin of the given size and
 the pocket is sunk into the top of the bin's solid part (see
-``gridfinity_cutter.bins``); the STL is then the finished Gridfinity bin with
+``gridfinity_shadowbox.bins``); the STL is then the finished Gridfinity bin with
 the pocket cut out (``bins.geometry``).
 """
 
@@ -60,7 +60,7 @@ from svgelements import SVG, Close, Line, Move
 from svgelements import Path as SvgPath
 from svgelements import Shape as SvgShape
 
-from gridfinity_cutter.bins import BinParams
+from gridfinity_shadowbox.bins import BinParams
 
 DEFAULT_CLEARANCE_MM = 0.0
 DEFAULT_CURVE_TOLERANCE_MM = 0.1
@@ -337,7 +337,7 @@ def build_in_bin(
 ) -> tuple[Polygon | MultiPolygon, trimesh.Trimesh]:
     """Offset outline (SVG plane) -> placed outline in bin coordinates + finished bin mesh."""
     # bins.geometry uses extrude_geometry, so it cannot be imported at module level.
-    from gridfinity_cutter.bins.geometry import bin_with_pocket
+    from gridfinity_shadowbox.bins.geometry import bin_with_pocket
 
     placed = place_in_bin(flip_y(geom, mirror), bin)
     return placed, bin_with_pocket(placed, height_mm, bin)
@@ -377,6 +377,6 @@ def run(
 
 
 if __name__ == "__main__":
-    from gridfinity_cutter.cli import main
+    from gridfinity_shadowbox.cli import main
 
     sys.exit(main(["extrude", *sys.argv[1:]]))

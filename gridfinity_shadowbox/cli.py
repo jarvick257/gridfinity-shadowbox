@@ -1,4 +1,4 @@
-"""Command line entry point: gridfinity-cutter sheet|outline|extrude|run|ui."""
+"""Command line entry point: shadowbox sheet|outline|extrude|run|ui."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from gridfinity_cutter import extrude, outline, sheet
-from gridfinity_cutter.bins import LIP_STYLES, BinParams
-from gridfinity_cutter.params import BIN_GENERIC_FIELDS, Params, ParamsError
+from gridfinity_shadowbox import extrude, outline, sheet
+from gridfinity_shadowbox.bins import LIP_STYLES, BinParams
+from gridfinity_shadowbox.params import BIN_GENERIC_FIELDS, Params, ParamsError
 
 DEFAULT_UI_PORT = 7860
 
@@ -122,7 +122,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 def _cmd_ui(args: argparse.Namespace) -> int:
     try:
-        from gridfinity_cutter import ui
+        from gridfinity_shadowbox import ui
     except ImportError as e:
         print(
             f"ui: {e}\nThe web UI needs extra packages; install them with: uv sync --extra ui",
@@ -136,7 +136,7 @@ def _cmd_ui(args: argparse.Namespace) -> int:
 def build_parser(defaults: dict[str, Any] | None = None) -> argparse.ArgumentParser:
     """Build the parser. ``defaults`` (from ``--params``) override argument defaults
     on the ``extrude`` and ``run`` subcommands; explicit flags still win."""
-    p = argparse.ArgumentParser(prog="gridfinity-cutter")
+    p = argparse.ArgumentParser(prog="shadowbox")
     sub = p.add_subparsers(dest="command", required=True)
 
     s = sub.add_parser("sheet", help="generate the printable reference marker sheet (PDF)")
