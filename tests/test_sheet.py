@@ -53,3 +53,19 @@ def test_render_pdf_writes_file(tmp_path):
     sheet.render_pdf(out, SPEC)
     assert out.stat().st_size > 1000
     assert out.read_bytes().startswith(b"%PDF")
+
+
+def test_render_svg_matches_pdf_geometry():
+    svg = sheet.render_svg(SPEC)
+    w, h = SPEC.page_mm
+    assert f'width="{w:g}mm" height="{h:g}mm" viewBox="0 0 {w:g} {h:g}"' in svg
+    black_cells = sum(int(sheet.marker_bits(mid, SPEC).sum()) for mid in SPEC.marker_ids)
+    assert svg.count('fill="#000"') == black_cells
+    assert "100 mm" in svg and "do not fit to page" in svg
+
+
+def test_render_print_html_fixes_page_size():
+    html = sheet.render_print_html(SPEC)
+    w, h = SPEC.page_mm
+    assert f"@page{{size:{w:g}mm {h:g}mm;margin:0}}" in html
+    assert "<svg" in html and "</svg>" in html

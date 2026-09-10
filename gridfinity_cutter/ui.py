@@ -14,13 +14,14 @@ of a drag even while a previous handler is still running.
 
 from __future__ import annotations
 
+import json
 import os
 from functools import partial, update_wrapper
 from pathlib import Path
 
 import gradio as gr
 
-from gridfinity_cutter import extrude, outline
+from gridfinity_cutter import extrude, outline, sheet
 from gridfinity_cutter.bins import HEIGHT_UNIT_MM
 from gridfinity_cutter.params import BinParams, GeometryParams, ImageParams, Params
 from gridfinity_cutter.session import Session, SessionError
@@ -134,6 +135,34 @@ def on_export(session: Session, out_dir: str, stem: str, *values):
         return gr.update(), f"error: cannot write to {out_dir}: {e}"
 
 
+def print_sheet_js(spec: sheet.SheetSpec) -> str:
+    """Browser-side handler: load the sheet into a hidden iframe and open the print dialog.
+
+    Printing the HTML/SVG version rather than the PDF keeps the browser at its
+    default 100% scale (PDF viewers tend to default to "fit to page", which
+    would silently shrink the markers). A fresh iframe per click makes sure the
+    load event fires again. Nothing is sent to the server.
+    """
+    html = json.dumps(sheet.render_print_html(spec))
+    return f"""() => {{
+        const old = document.getElementById("gc-print-sheet");
+        if (old) old.remove();
+        const f = document.createElement("iframe");
+        f.id = "gc-print-sheet";
+        f.setAttribute("aria-hidden", "true");
+        f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+        // srcdoc is set before insertion and the load handler checks for the
+        // sheet: the iframe's initial about:blank document fires load too.
+        f.onload = () => {{
+            if (!f.contentDocument || !f.contentDocument.querySelector("svg")) return;
+            f.contentWindow.focus();
+            f.contentWindow.print();
+        }};
+        f.srcdoc = {html};
+        document.body.appendChild(f);
+    }}"""
+
+
 # -- layout -------------------------------------------------------------------
 
 
@@ -151,6 +180,9 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
         gr.Markdown(f"## {TITLE}")
         with gr.Row():
             with gr.Column(scale=1, min_width=280):
+                print_btn = gr.Button(
+                    f"Print reference sheet ({session.spec.paper.upper()}, 100% scale)"
+                )
                 photo = gr.Image(
                     label="Photo", type="filepath", sources=["upload"], height=160, value=photo0
                 )
@@ -274,6 +306,7 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
             ev(bind(on_change), controls, all_out, concurrency_limit=1, **always)
 
         export_btn.click(bind(on_export), [out_dir, stem, *controls], [files, status], **always)
+        print_btn.click(None, js=print_sheet_js(session.spec))
 
     app.session = session  # type: ignore[attr-defined]
     return app

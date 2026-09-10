@@ -47,3 +47,11 @@ def test_handlers_report_errors():
     assert status.startswith("error:") and "load a photo" in status
     out = ui.on_load(session, None, *VALUES)
     assert "drop a photo" in out[-1]
+
+
+def test_print_sheet_js_embeds_sheet():
+    from gridfinity_cutter import sheet
+
+    js = ui.print_sheet_js(sheet.DEFAULT_SPEC)
+    assert js.startswith("() =>") and "print()" in js
+    assert "@page{size:210mm 297mm;margin:0}" in js
