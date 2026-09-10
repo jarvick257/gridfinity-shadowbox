@@ -16,12 +16,10 @@ cutout is placed inside the footprint by ``extrude.place_in_bin`` and the pocket
 is sunk into that solid, i.e. it occupies z from ``pocket_top_mm - depth`` to
 ``pocket_top_mm``.
 
-Height rules mirror the Gridfinity Rebuilt OpenSCAD library (``height()`` in
-``gridfinity-rebuilt-utility.scad`` and ``new_bin()`` in ``bin.scad``); the
-``openscad`` backend cross-checks them against the library on every render.
-
-Profile constants below are the Gridfinity spec values as written in Rebuilt's
-``standard.scad``; ``bins/native.py`` builds the bin from them.
+Height rules and profile constants mirror the Gridfinity Rebuilt OpenSCAD
+library (``height()`` in ``gridfinity-rebuilt-utility.scad``, ``new_bin()`` in
+``bin.scad``, the spec values in ``standard.scad``) so bins from this project
+match Rebuilt's. ``bins/native.py`` builds the bin from these constants.
 """
 
 from __future__ import annotations
@@ -77,7 +75,7 @@ SCREW_HOLE_RADIUS_MM = 3 / 2
 HOLE_CHAMFER_MM = 0.8  # extra radius at the mouth, 45 deg
 LAYER_HEIGHT_MM = 0.2  # for the printable hole top
 
-BACKEND_NAMES: tuple[str, ...] = ("none", "native", "openscad")
+BACKEND_NAMES: tuple[str, ...] = ("none", "native")
 
 # gridz_define values (see BinParams).
 GRIDZ_UNITS, GRIDZ_INTERNAL_MM, GRIDZ_EXTERNAL_MM, GRIDZ_EXTERNAL_WITH_LIP_MM = 0, 1, 2, 3
@@ -238,8 +236,4 @@ def get_backend(name: str) -> BinBackend:
         from gridfinity_cutter.bins.native import NativeBackend
 
         return NativeBackend()
-    if name == "openscad":
-        from gridfinity_cutter.bins.openscad import OpenScadBackend
-
-        return OpenScadBackend()
     raise ValueError(f"unknown bin backend {name!r}; known: {', '.join(BACKEND_NAMES)}")

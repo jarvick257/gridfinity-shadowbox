@@ -261,7 +261,7 @@ def _add_bin_options(e: argparse.ArgumentParser) -> None:
         "bin placement",
         "With --bin-units the STL is written in bin coordinates: x/y from the bin's "
         "grid corner, z from the bin bottom, pocket sunk into the bin's solid top. "
-        "With --bin-backend native (or openscad) the STL is the finished Gridfinity bin.",
+        "With --bin-backend native the STL is the finished Gridfinity bin.",
     )
     g.add_argument(
         "--bin-units",

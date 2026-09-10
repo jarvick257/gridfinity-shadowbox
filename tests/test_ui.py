@@ -13,7 +13,7 @@ from gridfinity_cutter.session import Session
 
 FIXTURE = Path(__file__).parent / "fixtures" / "box_cutter.jpg"
 # px_per_mm, auto, threshold, tolerance, min_area, clearance, height, mirror, then the bin
-# defaults (backend "none": the handlers must not need OpenSCAD).
+# defaults (backend "none").
 VALUES = [5.0, True, 40, 0.2, 100, 0.5, 12.0, False] + [
     getattr(BinParams(), name) for name in ui.BIN_CONTROL_NAMES
 ]

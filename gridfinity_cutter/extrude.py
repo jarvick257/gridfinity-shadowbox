@@ -36,7 +36,7 @@ With ``bin=BinParams(...)`` the solid is written in *bin coordinates* instead:
 the outline is rotated and moved inside a Gridfinity bin of the given size and
 the pocket is sunk into the top of the bin's solid part (see
 ``gridfinity_cutter.bins``). The bin backend named in ``bin.backend`` decides
-what the STL contains: ``none`` writes the pocket solid alone, ``openscad``
+what the STL contains: ``none`` writes the pocket solid alone, ``native``
 the finished Gridfinity bin with the pocket cut out.
 """
 

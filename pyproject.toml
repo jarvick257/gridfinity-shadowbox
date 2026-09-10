@@ -27,14 +27,6 @@ dev = ["pytest", "ruff"]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.build]
-# The vendored OpenSCAD library ships only its sources.
-exclude = [
-    "gridfinity_cutter/bins/gridfinity-rebuilt-openscad/docs",
-    "gridfinity_cutter/bins/gridfinity-rebuilt-openscad/images",
-    "gridfinity_cutter/bins/gridfinity-rebuilt-openscad/tests",
-]
-
 [tool.hatch.build.targets.wheel]
 packages = ["gridfinity_cutter"]
 
@@ -43,4 +35,3 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-extend-exclude = ["gridfinity_cutter/bins/gridfinity-rebuilt-openscad"]

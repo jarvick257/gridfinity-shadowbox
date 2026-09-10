@@ -1,25 +1,9 @@
-"""Bin parameters, height rules and the OpenSCAD backend plumbing (no OpenSCAD needed)."""
-
-import os
-import re
-import stat
-import subprocess
-from pathlib import Path
+"""Bin parameters and height rules."""
 
 import pytest
 
 from gridfinity_cutter import bins
 from gridfinity_cutter.bins import BinParams
-from gridfinity_cutter.bins import openscad as scad
-
-LIB_BINS = scad.LIBRARY_DIR / "gridfinity-rebuilt-bins.scad"
-
-
-@pytest.fixture(autouse=True)
-def _fresh_lookup():
-    scad.find_openscad.cache_clear()
-    yield
-    scad.find_openscad.cache_clear()
 
 
 @pytest.mark.parametrize(
@@ -71,109 +55,7 @@ def test_positional_fields_are_only_size():
 
 
 def test_get_backend_names():
-    assert bins.get_backend("openscad").name == "openscad"
     assert bins.get_backend("native").name == "native"
+    assert bins.get_backend("none").name == "none"
     with pytest.raises(ValueError, match="unknown bin backend"):
         bins.get_backend("nope")
-
-
-# -- OpenSCAD plumbing --------------------------------------------------------
-
-
-def test_scad_defines_literals():
-    d = scad.scad_defines(BinParams(2, 3, 2.5, lip="none", magnet_holes=True))
-    assert d[:3] == ["-Dgridx=2", "-Dgridy=3", "-Dgridz=2.5"]
-    assert "-Dinclude_lip=false" in d and "-Dmagnet_holes=true" in d and "-Ddivx=0" in d
-    assert "-Drefined_holes=false" in d
-    assert not any(a.startswith(("-Doffset", "-Drotation", "-Dbackend")) for a in d)
-
-
-def test_scad_vars_match_wrapper_and_library():
-    """Every mapped variable is assigned in bin.scad, and bin.scad exposes every customizer variable."""
-    top_level = set(re.findall(r"^(\w+)\s*=", scad.WRAPPER.read_text(), re.MULTILINE))
-    assert set(scad.SCAD_VARS.values()) <= top_level
-    fields = set(scad.SCAD_VARS)
-    assert fields == {f for f in BinParams.__dataclass_fields__} - {
-        "lip",
-        "offset_x_mm",
-        "offset_y_mm",
-        "rotation_deg",
-        "backend",
-    }
-    defined = set(scad.SCAD_VARS.values()) | set(scad.SCAD_FIXED) | {"include_lip"}
-    assert defined <= top_level
-
-
-def test_cache_key_ignores_placement():
-    tool = scad.OpenScad("x", "2026.01", 2026, True)
-    a = scad.cache_key(BinParams(2, 2), tool)
-    assert a == scad.cache_key(
-        BinParams(2, 2, offset_x_mm=5, rotation_deg=30, backend="openscad"), tool
-    )
-    assert a != scad.cache_key(BinParams(2, 2, gridz=4), tool)
-    assert a != scad.cache_key(BinParams(2, 2), scad.OpenScad("x", "2026.02", 2026, True))
-
-
-def _fake_openscad(path: Path, version: str, with_backend: bool = True) -> str:
-    backend = "--backend arg" if with_backend else ""
-    path.write_text(
-        "#!/bin/sh\n"
-        f'case "$1" in --version) echo "OpenSCAD version {version}" >&2;; '
-        f'--help) echo "{backend}";; esac\n'
-    )
-    path.chmod(path.stat().st_mode | stat.S_IEXEC)
-    return str(path)
-
-
-def test_find_openscad_versions(tmp_path, monkeypatch):
-    monkeypatch.setenv(scad.ENV_OPENSCAD, _fake_openscad(tmp_path / "new", "2025.03.01"))
-    tool = scad.find_openscad()
-    assert tool is not None and tool.year == 2025 and tool.manifold and tool.version == "2025.03.01"
-
-    monkeypatch.setenv(scad.ENV_OPENSCAD, _fake_openscad(tmp_path / "old", "2021.01", False))
-    scad.find_openscad.cache_clear()
-    assert scad.find_openscad() is None
-    assert "development build" in (scad.unavailable_reason() or "")
-    with pytest.raises(scad.OpenScadError, match="unavailable"):
-        scad.require()
-
-
-def test_parse_and_check_echo():
-    text = (
-        'ECHO: "GFC_HEIGHT_MM=21"\nECHO: "GFC_INFILL_MM=[39.6, 39.6, 12.8]"\n'
-        'ECHO: "GFC_BBOX_MM=[41.5, 41.5, 24.5479]"\nECHO: "other"\n'
-    )
-    echo = scad.parse_echo(text)
-    assert echo == {
-        "HEIGHT_MM": 21,
-        "INFILL_MM": [39.6, 39.6, 12.8],
-        "BBOX_MM": [41.5, 41.5, 24.5479],
-    }
-    scad.check_echo(BinParams(gridz=3), echo)
-    with pytest.raises(scad.OpenScadError, match="out of sync"):
-        scad.check_echo(BinParams(gridz=4), echo)
-    with pytest.raises(scad.OpenScadError, match="did not echo"):
-        scad.check_echo(BinParams(), {})
-
-
-def test_render_reports_openscad_errors(tmp_path, monkeypatch):
-    monkeypatch.setenv(scad.ENV_OPENSCAD, _fake_openscad(tmp_path / "fake", "2025.01.01"))
-    monkeypatch.setenv(scad.ENV_CACHE, str(tmp_path / "cache"))
-    assert scad.find_openscad() is not None  # probe (and cache) before patching subprocess
-
-    def failing_run(cmd, **kw):
-        return subprocess.CompletedProcess(cmd, 1, "", 'ERROR: Assertion failed: "boom"\n')
-
-    monkeypatch.setattr(scad.subprocess, "run", failing_run)
-    with pytest.raises(scad.OpenScadError, match=r"(?s)exit 1.*boom"):
-        scad.render_bin(BinParams())
-    assert not any(tmp_path.joinpath("cache").rglob("*.stl"))
-
-
-def test_cache_dir_env(tmp_path, monkeypatch):
-    monkeypatch.setenv(scad.ENV_CACHE, str(tmp_path))
-    assert scad.cache_dir() == tmp_path / "bins"
-    monkeypatch.delenv(scad.ENV_CACHE)
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
-    assert scad.cache_dir() == tmp_path / "xdg" / "gridfinity-cutter" / "bins"
-    assert os.environ.get(scad.ENV_CACHE) is None
