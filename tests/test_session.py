@@ -84,21 +84,25 @@ def test_fit_bin(session):
     assert session.fit_bin(params(rotation_deg=90)) == (5, 2)
 
 
-def test_render_scene(session):
+def test_render_scene(session, solid_at):
     p = params(units_x=2, units_y=5, gridz=3, offset_x_mm=5, offset_y_mm=-3, height_mm=12)
     glb = session.render(p)
     scene = trimesh.load(str(glb))
-    assert set(scene.geometry) == {"cutout", "bin"}
-    cutout = scene.geometry["cutout"]
-    assert np.allclose(cutout.bounds[:, 2], (19.8 - 12, 19.8), atol=1e-4)  # lip support: -1.2
-    minx, miny = cutout.bounds[0, :2]
-    maxx, maxy = cutout.bounds[1, :2]
+    assert set(scene.geometry) == {"bin"}
+    bin_mesh = scene.geometry["bin"]
+    assert np.allclose(bin_mesh.bounds[0], (0.25, 0.25, 0), atol=1e-4)
+    assert np.allclose(bin_mesh.bounds[1, :2], (83.75, 209.75), atol=1e-4)
+    # The pocket is centred at the offset and sunk 12 mm below the lip support (21 - 1.2).
+    placed, mesh = session.build(p)
+    minx, miny, maxx, maxy = placed.bounds
     assert np.allclose(((minx + maxx) / 2, (miny + maxy) / 2), (42 + 5, 105 - 3), atol=1e-3)
-    assert np.allclose(scene.geometry["bin"].bounds[1], (83.75, 209.75, 21), atol=1e-4)
+    cx, cy = placed.centroid.x, placed.centroid.y
+    assert not solid_at(mesh, cx, cy, 19.8 - 12 + 0.1) and solid_at(mesh, cx, cy, 19.8 - 12 - 0.1)
     # Rewriting with other parameters changes the file in place.
     glb2 = session.render(params(units_x=2, units_y=5, height_mm=5))
     assert glb2 == glb
-    assert np.allclose(trimesh.load(str(glb2)).geometry["cutout"].bounds[:, 2], (14.8, 19.8))
+    _, mesh2 = session.build(params(units_x=2, units_y=5, height_mm=5))
+    assert mesh2.volume > mesh.volume
 
 
 def test_export_and_cli_reproduce(session, tmp_path):
@@ -124,15 +128,15 @@ def test_status_warns_on_deep_pocket(session):
     assert "WARNING: cutout within" in session.status(params(units_x=2, units_y=4, height_mm=5))
 
 
-def test_native_backend_scene_and_export(session, tmp_path):
-    p = params(units_x=2, units_y=5, gridz=3, height_mm=8, backend="native", magnet_holes=True)
+def test_scene_with_holes_and_export(session, tmp_path):
+    p = params(units_x=2, units_y=5, gridz=3, height_mm=8, magnet_holes=True)
     scene = trimesh.load(str(session.render(p)))
-    assert "bin" in scene.geometry  # the finished bin, no reference block
+    assert set(scene.geometry) == {"bin"}
     bin_mesh = scene.geometry["bin"]
     assert np.allclose(bin_mesh.bounds[0], (0.25, 0.25, 0), atol=1e-4)
     assert np.allclose(bin_mesh.bounds[1, :2], (83.75, 209.75), atol=1e-4)
     assert 21 + 3.4 < bin_mesh.bounds[1, 2] < 21 + 3.7  # stacking lip with rounded tip
-    assert "backend native" in session.status(p)
+    assert "STL:" in session.status(p, bin_mesh)
 
     _, stl, js = session.export(p, tmp_path / "out", "obj")
     mesh = trimesh.load(str(stl))

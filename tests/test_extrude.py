@@ -8,6 +8,8 @@ import trimesh
 
 from gridfinity_cutter import cli, extrude, outline
 from gridfinity_cutter.bins import BinParams
+from gridfinity_cutter.bins.geometry import bin_mesh
+from gridfinity_cutter.bins.geometry import bin_with_pocket as build_bin
 
 FIXTURE = Path(__file__).parent / "fixtures" / "box_cutter.jpg"
 RECT = np.array([[30.0, 40.0], [60.0, 40.0], [60.0, 90.0], [30.0, 90.0]])  # 30 x 50 mm
@@ -201,31 +203,31 @@ def test_place_in_bin_centre_offset_and_rotation():
     assert extrude.apply_matrix(corner, m).equals_exact(shapely.Point(0, 0), 1e-9)
 
 
-def test_run_in_bin_coordinates(tmp_path):
+def test_run_in_bin_coordinates(tmp_path, solid_at):
     out = tmp_path / "o.stl"
     bin_ = BinParams(units_x=1, units_y=2, gridz=3, lip="none")
     res = extrude.run(rect_svg(tmp_path), out, height_mm=8, bin=bin_)
     mesh = load(out)
-    assert np.allclose(mesh.bounds[:, 2], (21 - 8, 21))
-    assert np.allclose(mesh.bounds[0, :2], (6, 17)) and np.allclose(mesh.bounds[1, :2], (36, 67))
-    assert np.allclose(res.size_mm, (30, 50, 8))
+    # The STL is the whole bin (42 x 84 mm cells, 0.5 mm gap) with the pocket cut out.
+    assert np.allclose(mesh.bounds, [[0.25, 0.25, 0], [41.75, 83.75, 21]])
+    assert np.allclose(res.size_mm, (41.5, 83.5, 21))
     assert mesh.is_watertight
-    with pytest.raises(ValueError, match="unknown bin backend"):
-        extrude.run(rect_svg(tmp_path), out, height_mm=8, bin=BinParams(backend="nope"))
+    assert math.isclose(bin_mesh(bin_).volume - mesh.volume, 30 * 50 * 8, rel_tol=1e-3)
+    # The pocket occupies the 30 x 50 mm rectangle centred in the bin, top 8 mm.
+    placed = extrude.place_in_bin(cad_rect(), bin_)
+    assert np.allclose(placed.bounds, (6, 17, 36, 67))
+    assert not solid_at(mesh, 21, 42, 21 - 4) and solid_at(mesh, 21, 42, 21 - 12)
 
 
-def test_none_backend_context_block():
-    from gridfinity_cutter.bins import get_backend
-
+def test_pocket_below_lip_support(solid_at):
     bin_ = BinParams(units_x=2, units_y=1, gridz=2)
-    res = get_backend("none").build(extrude.place_in_bin(cad_rect(), bin_), 5.0, bin_)
+    mesh = build_bin(extrude.place_in_bin(cad_rect(), bin_), 5.0, bin_)
     # With a stacking lip the solid part stops 1.2 mm below the 14 mm bin top.
-    assert np.allclose(res.solid.bounds[:, 2], (12.8 - 5, 12.8))
-    assert res.context is not None
-    assert np.allclose(res.context.bounds, [[0.25, 0.25, 0], [83.75, 41.75, 14]])
+    x, y = bin_.centre_mm
+    assert not solid_at(mesh, x, y, 12.8 - 5 + 0.1) and solid_at(mesh, x, y, 12.8 - 5 - 0.1)
 
 
-def test_cli_bin_options(tmp_path, capsys):
+def test_cli_bin_options(tmp_path, capsys, solid_at):
     stl = tmp_path / "o.stl"
     rc = cli.main(
         [
@@ -251,5 +253,9 @@ def test_cli_bin_options(tmp_path, capsys):
     assert rc == 0
     assert "in a 2 x 3 u bin, gridz 28 (84 x 126 x 28 mm excl. lip" in capsys.readouterr().out
     mesh = load(stl)
-    assert np.allclose(mesh.bounds[:, 2], (18, 28))
-    assert np.allclose(mesh.extents[:2], (50, 30))
+    assert np.allclose(mesh.bounds, [[0.25, 0.25, 0], [83.75, 125.75, 28]])
+    bin_ = BinParams(2, 3, 28, gridz_define=2, lip="none")
+    assert math.isclose(bin_mesh(bin_).volume - mesh.volume, 30 * 50 * 10, rel_tol=1e-3)
+    # Rotated by 90 degrees the pocket is 50 mm along x.
+    x, y = bin_.centre_mm
+    assert not solid_at(mesh, x + 24, y, 27) and solid_at(mesh, x + 26, y, 27)

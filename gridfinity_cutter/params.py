@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from gridfinity_cutter import extrude, outline
-from gridfinity_cutter.bins import BACKEND_NAMES, BinParams
+from gridfinity_cutter.bins import BinParams
 
 __all__ = [
     "BIN_GENERIC_FIELDS",
@@ -31,7 +31,7 @@ __all__ = [
 # BinParams fields with their own CLI flags; every other field gets a generated
 # ``--bin-<name>`` flag with argparse dest ``bin_<name>`` (see cli._add_bin_options).
 BIN_SPECIAL_FIELDS = frozenset(
-    {"units_x", "units_y", "gridz", "offset_x_mm", "offset_y_mm", "rotation_deg", "backend"}
+    {"units_x", "units_y", "gridz", "offset_x_mm", "offset_y_mm", "rotation_deg"}
 )
 BIN_GENERIC_FIELDS: tuple[str, ...] = tuple(
     f.name for f in fields(BinParams) if f.name not in BIN_SPECIAL_FIELDS
@@ -84,12 +84,7 @@ class Params:
         kwargs: dict[str, Any] = {"photo": data.get("photo")}
         for name, klass in sections.items():
             kwargs[name] = _section(klass, name, data.get(name, {}))
-        params = cls(**kwargs)
-        if params.bin.backend not in BACKEND_NAMES:
-            raise ParamsError(
-                f"bin.backend {params.bin.backend!r} unknown; known: {', '.join(BACKEND_NAMES)}"
-            )
-        return params
+        return cls(**kwargs)
 
     @classmethod
     def from_json(cls, path: str | Path) -> Params:
@@ -119,7 +114,6 @@ class Params:
             "bin_height": b.gridz,
             "offset": [b.offset_x_mm, b.offset_y_mm],
             "rotation": b.rotation_deg,
-            "bin_backend": b.backend,
             **{f"bin_{name}": getattr(b, name) for name in BIN_GENERIC_FIELDS},
         }
 

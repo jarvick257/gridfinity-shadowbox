@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from gridfinity_cutter import extrude, outline, sheet
-from gridfinity_cutter.bins import BACKEND_NAMES, LIP_STYLES, BinParams
+from gridfinity_cutter.bins import LIP_STYLES, BinParams
 from gridfinity_cutter.params import BIN_GENERIC_FIELDS, Params, ParamsError
 
 DEFAULT_UI_PORT = 7860
@@ -55,7 +55,6 @@ def _bin_from_args(args: argparse.Namespace) -> BinParams | None:
         offset_x_mm=ox,
         offset_y_mm=oy,
         rotation_deg=args.rotation,
-        backend=args.bin_backend,
         **{name: getattr(args, f"bin_{name}") for name in BIN_GENERIC_FIELDS},
     )
 
@@ -82,7 +81,7 @@ def _run_extrude(args: argparse.Namespace, svg: str, stl: str) -> int:
         bw, bd, bh = bin_params.size_mm
         where = (
             f", in a {bin_params.units_x} x {bin_params.units_y} u bin, gridz {bin_params.gridz:g} "
-            f"({bw:g} x {bd:g} x {bh:g} mm excl. lip, backend {bin_params.backend})"
+            f"({bw:g} x {bd:g} x {bh:g} mm excl. lip)"
         )
     print(
         f"wrote {stl}: {w:.1f} x {d:.1f} x {h:.1f} mm, {res.n_faces} faces, "
@@ -137,7 +136,7 @@ def build_parser(defaults: dict[str, Any] | None = None) -> argparse.ArgumentPar
     _add_outline_options(o)
     o.set_defaults(func=_cmd_outline)
 
-    e = sub.add_parser("extrude", help="outline SVG (mm units) -> extruded cutter solid STL")
+    e = sub.add_parser("extrude", help="outline SVG (mm units) -> STL (cutter solid or bin)")
     e.add_argument("svg")
     e.add_argument("-o", "--output", default="object.stl")
     _add_params_option(e)
@@ -259,9 +258,9 @@ BIN_CHOICES: dict[str, tuple[str, ...]] = {"lip": LIP_STYLES}
 def _add_bin_options(e: argparse.ArgumentParser) -> None:
     g = e.add_argument_group(
         "bin placement",
-        "With --bin-units the STL is written in bin coordinates: x/y from the bin's "
-        "grid corner, z from the bin bottom, pocket sunk into the bin's solid top. "
-        "With --bin-backend native the STL is the finished Gridfinity bin.",
+        "With --bin-units the STL is the finished Gridfinity bin with the pocket cut "
+        "into its solid top, in bin coordinates: x/y from the bin's grid corner, z "
+        "from the bin bottom.",
     )
     g.add_argument(
         "--bin-units",
@@ -293,7 +292,6 @@ def _add_bin_options(e: argparse.ArgumentParser) -> None:
         metavar="DEG",
         help="rotate the cutout counter-clockwise (seen from above)",
     )
-    g.add_argument("--bin-backend", choices=BACKEND_NAMES, default="none")
     o = e.add_argument_group("bin options")
     defaults = BinParams()
     for name in BIN_GENERIC_FIELDS:

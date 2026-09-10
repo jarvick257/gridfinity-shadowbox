@@ -22,9 +22,8 @@ gridfinity_cutter/
   sheet.py      # generate the printable reference sheet (PDF/SVG), known geometry
   outline.py    # photo -> outline SVG
   extrude.py    # SVG -> STL, incl. placement inside a bin
-  bins/         # Gridfinity constants, BinParams, BinBackend protocol
-    none.py     #   cutout only (pocket solid + reference block for the viewer)
-    native.py   #   finished bin: solid Gridfinity bin built with manifold3d, pocket subtracted
+  bins/         # Gridfinity constants, BinParams, height rules
+    geometry.py #   solid Gridfinity bin built with manifold3d, pocket subtracted
   params.py     # params.json schema (ImageParams/GeometryParams/BinParams), CLI defaults
   session.py    # UI logic without any web framework: cached warp, overlay, GLB scene, export
   ui.py         # Gradio layer only (optional extra `ui`); wires widgets to session.py
@@ -47,7 +46,7 @@ uv run gridfinity-cutter outline photo.jpg -o object.svg
 uv run gridfinity-cutter extrude object.svg --height 20 -o object.stl
 uv run gridfinity-cutter run photo.jpg --height 20 -o object.stl   # outline + extrude, keeps object.svg
 uv run gridfinity-cutter extrude object.svg --params object.params.json -o object.stl  # reproduce a UI session
-uv run gridfinity-cutter extrude object.svg --height 20 --bin-units 2 2 --bin-backend native -o bin.stl  # finished bin
+uv run gridfinity-cutter extrude object.svg --height 20 --bin-units 2 2 -o bin.stl  # finished bin with pocket
 uv run gridfinity-cutter ui photo.jpg   # interactive UI on http://127.0.0.1:7860
 uv run pytest                    # all tests (UI tests skip without the ui extra)
 uv run pytest tests/test_outline.py -k calibration   # single test
@@ -91,10 +90,10 @@ construction and bin minus pocket boolean). Optional extra `ui`: `gradio` (6.x; 
   (42 mm, 7 mm, lip sizes) and the height rules (`bin_height_mm`, `infill_height_mm`,
   mirrors of the library's `height()`/`new_bin()`) live only in `bins/__init__.py`,
   which must not import other project modules at import time.
-- **Bin backends.** Bins are always *solid* with our pocket as the only cavity, so
-  `BinParams` holds only size/height, lip style (`standard`/`reduced`/`none`) and
-  base hole options; option names follow Gridfinity Rebuilt's customizer where they
-  exist. `bins/native.py` builds the bin with manifold3d from the spec constants in
+- **Bin geometry.** With bin options the STL is always the finished bin. Bins are
+  always *solid* with our pocket as the only cavity, so `BinParams` holds only
+  size/height, lip style (`standard`/`reduced`/`none`) and base hole options;
+  option names follow Gridfinity Rebuilt's customizer where they exist. `bins/geometry.py` builds the bin with manifold3d from the spec constants in
   `bins/__init__.py`: every piece is a convex hull of two rounded rectangles at
   different heights (`loft`/`sweep`), a prism, or a cylinder/box, so a bin takes
   ~50 ms. The geometry was verified against Gridfinity Rebuilt 2.0.0 renders (volume
@@ -120,7 +119,7 @@ construction and bin minus pocket boolean). Optional extra `ui`: `gradio` (6.x; 
   the UI export writes it, `--params` on `extrude`/`run` reads it as defaults
   (explicit flags win). Add new knobs to the dataclasses and `to_cli_defaults`,
   not to the CLI alone.
-- `tests/test_bins_native.py` checks the bin geometry by slicing the Manifold
+- `tests/test_bins_geometry.py` checks the bin geometry by slicing the Manifold
   (cross-section areas and contour counts at known heights) rather than by mesh
   statistics.
 - Real photos as test fixtures are large; keep a couple of small downscaled

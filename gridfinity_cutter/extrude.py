@@ -35,9 +35,8 @@ Bin placement
 With ``bin=BinParams(...)`` the solid is written in *bin coordinates* instead:
 the outline is rotated and moved inside a Gridfinity bin of the given size and
 the pocket is sunk into the top of the bin's solid part (see
-``gridfinity_cutter.bins``). The bin backend named in ``bin.backend`` decides
-what the STL contains: ``none`` writes the pocket solid alone, ``native``
-the finished Gridfinity bin with the pocket cut out.
+``gridfinity_cutter.bins``); the STL is then the finished Gridfinity bin with
+the pocket cut out (``bins.geometry``).
 """
 
 from __future__ import annotations
@@ -55,7 +54,7 @@ from svgelements import SVG, Close, Line, Move
 from svgelements import Path as SvgPath
 from svgelements import Shape as SvgShape
 
-from gridfinity_cutter.bins import BinParams, BinResult, get_backend
+from gridfinity_cutter.bins import BinParams
 
 DEFAULT_CLEARANCE_MM = 0.0
 DEFAULT_CURVE_TOLERANCE_MM = 0.1
@@ -288,10 +287,13 @@ def place_in_bin(geom_cad: Polygon | MultiPolygon, bin: BinParams) -> Polygon | 
 
 def build_in_bin(
     geom: Polygon | MultiPolygon, height_mm: float, bin: BinParams, mirror: bool = False
-) -> tuple[Polygon | MultiPolygon, BinResult]:
-    """Offset outline (SVG plane) -> placed outline in bin coordinates + backend result."""
+) -> tuple[Polygon | MultiPolygon, trimesh.Trimesh]:
+    """Offset outline (SVG plane) -> placed outline in bin coordinates + finished bin mesh."""
+    # bins.geometry uses extrude_geometry, so it cannot be imported at module level.
+    from gridfinity_cutter.bins.geometry import bin_with_pocket
+
     placed = place_in_bin(flip_y(geom, mirror), bin)
-    return placed, get_backend(bin.backend).build(placed, height_mm, bin)
+    return placed, bin_with_pocket(placed, height_mm, bin)
 
 
 def _result(geom, mesh: trimesh.Trimesh) -> ExtrudeResult:
@@ -320,8 +322,7 @@ def run(
     if bin is None:
         mesh = to_mesh(geom, height_mm, mirror=mirror)
     else:
-        _, res = build_in_bin(geom, height_mm, bin, mirror)
-        mesh = res.solid
+        _, mesh = build_in_bin(geom, height_mm, bin, mirror)
     mesh.export(str(output))
     return _result(geom, mesh)
 

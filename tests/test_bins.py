@@ -2,7 +2,6 @@
 
 import pytest
 
-from gridfinity_cutter import bins
 from gridfinity_cutter.bins import BinParams
 
 
@@ -52,10 +51,3 @@ def test_validation(kw):
 def test_positional_fields_are_only_size():
     with pytest.raises(TypeError):
         BinParams(1, 1, 3, 0)  # type: ignore[misc]
-
-
-def test_get_backend_names():
-    assert bins.get_backend("native").name == "native"
-    assert bins.get_backend("none").name == "none"
-    with pytest.raises(ValueError, match="unknown bin backend"):
-        bins.get_backend("nope")

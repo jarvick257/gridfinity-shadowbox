@@ -1,8 +1,9 @@
-"""Gridfinity bin backends: build the solid that goes around (or is) the cutout.
+"""Gridfinity bin parameters, spec constants and the bin coordinate convention.
 
 This module is the only place that knows the Gridfinity grid constants and the
 bin coordinate convention. It must not import other project modules at import
-time (``extrude`` and ``params`` both import from here).
+time (``extrude`` and ``params`` both import from here). ``bins/geometry.py``
+builds the bin solid from these constants.
 
 Bin coordinate convention
 -------------------------
@@ -19,18 +20,13 @@ is sunk into that solid, i.e. it occupies z from ``pocket_top_mm - depth`` to
 Height rules and profile constants mirror the Gridfinity Rebuilt OpenSCAD
 library (``height()`` in ``gridfinity-rebuilt-utility.scad``, ``new_bin()`` in
 ``bin.scad``, the spec values in ``standard.scad``) so bins from this project
-match Rebuilt's. ``bins/native.py`` builds the bin from these constants.
+match Rebuilt's.
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import KW_ONLY, dataclass
-from typing import TYPE_CHECKING, Protocol
-
-if TYPE_CHECKING:
-    import trimesh
-    from shapely.geometry import MultiPolygon, Polygon
 
 GRID_MM = 42.0
 HEIGHT_UNIT_MM = 7.0
@@ -74,8 +70,6 @@ MAGNET_HOLE_DEPTH_MM = 2.4  # 2 mm magnet + 2 layers
 SCREW_HOLE_RADIUS_MM = 3 / 2
 HOLE_CHAMFER_MM = 0.8  # extra radius at the mouth, 45 deg
 LAYER_HEIGHT_MM = 0.2  # for the printable hole top
-
-BACKEND_NAMES: tuple[str, ...] = ("none", "native")
 
 # gridz_define values (see BinParams).
 GRIDZ_UNITS, GRIDZ_INTERNAL_MM, GRIDZ_EXTERNAL_MM, GRIDZ_EXTERNAL_WITH_LIP_MM = 0, 1, 2, 3
@@ -127,7 +121,6 @@ class BinParams:
     offset_x_mm: float = 0.0
     offset_y_mm: float = 0.0
     rotation_deg: float = 0.0
-    backend: str = "none"
 
     def __post_init__(self) -> None:
         if self.units_x < 1 or self.units_y < 1:
@@ -210,30 +203,3 @@ def infill_height_mm(p: BinParams) -> float:
 
 def pocket_top_mm(p: BinParams) -> float:
     return BASE_HEIGHT_MM + infill_height_mm(p)
-
-
-@dataclass(frozen=True)
-class BinResult:
-    solid: trimesh.Trimesh  # what gets exported as STL
-    context: trimesh.Trimesh | None = None  # viewer-only reference geometry
-    note: str = ""  # one line for the status display (render time, cache hit, ...)
-
-
-class BinBackend(Protocol):
-    name: str
-
-    def build(self, cutout: Polygon | MultiPolygon, height_mm: float, bin: BinParams) -> BinResult:
-        """``cutout`` is already placed in bin coordinates (mm, y up)."""
-        ...
-
-
-def get_backend(name: str) -> BinBackend:
-    if name == "none":
-        from gridfinity_cutter.bins.none import NoneBackend
-
-        return NoneBackend()
-    if name == "native":
-        from gridfinity_cutter.bins.native import NativeBackend
-
-        return NativeBackend()
-    raise ValueError(f"unknown bin backend {name!r}; known: {', '.join(BACKEND_NAMES)}")

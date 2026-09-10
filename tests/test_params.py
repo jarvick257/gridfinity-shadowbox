@@ -16,7 +16,7 @@ def test_json_round_trip(tmp_path):
     path = tmp_path / "p.json"
     p.to_json(path)
     data = json.loads(path.read_text())
-    assert data["image"]["threshold"] is None and data["bin"]["backend"] == "none"
+    assert data["image"]["threshold"] is None and data["bin"]["lip"] == "standard"
     assert Params.from_json(path) == p
 
 
@@ -27,8 +27,6 @@ def test_defaults_and_errors(tmp_path):
         Params.from_dict({"images": {}})
     with pytest.raises(ParamsError, match="unknown key.*'geometry'"):
         Params.from_dict({"geometry": {"depth": 3}})
-    with pytest.raises(ParamsError, match="bin.backend"):
-        Params.from_dict({"bin": {"backend": "nope"}})
     with pytest.raises(ParamsError, match="bad 'bin' section.*lip"):
         Params.from_dict({"bin": {"lip": "huge"}})
     bad = tmp_path / "bad.json"

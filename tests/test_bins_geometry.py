@@ -1,4 +1,4 @@
-"""The native (manifold3d) bin backend: geometry checks without any external tool."""
+"""Bin geometry (manifold3d): checked by slicing the solid, not by mesh statistics."""
 
 import math
 
@@ -11,10 +11,9 @@ from gridfinity_cutter.bins import (
     BASE_PROFILE_HEIGHT_MM,
     LIP_STYLES,
     BinParams,
-    get_backend,
     lip_height_mm,
 )
-from gridfinity_cutter.bins import native as nat
+from gridfinity_cutter.bins import geometry as nat
 
 
 def _slice_polys(p: BinParams, z: float) -> list:
@@ -126,16 +125,15 @@ def test_lip_profiles_rounded_tip():
 
 def test_cache_ignores_placement():
     a = nat.bin_solid(BinParams(2, 2))
-    b = nat.bin_solid(BinParams(2, 2, offset_x_mm=5, rotation_deg=30, backend="none"))
+    b = nat.bin_solid(BinParams(2, 2, offset_x_mm=5, rotation_deg=30))
     assert a is b
 
 
 def test_build_cuts_pocket():
-    p = BinParams(2, 2, 3, backend="native")
+    p = BinParams(2, 2, 3)
     cutout = extrude.place_in_bin(box(0, 0, 30, 50), p)
-    res = get_backend("native").build(cutout, 8.0, p)
+    mesh = nat.bin_with_pocket(cutout, 8.0, p)
     body = nat.bin_mesh(p)
-    assert res.solid.is_volume and res.context is None
-    assert np.allclose(res.solid.bounds, body.bounds, atol=1e-3)
-    assert math.isclose(body.volume - res.solid.volume, 30 * 50 * 8, rel_tol=1e-3)
-    assert "native" in res.note and "faces" in res.note
+    assert mesh.is_volume
+    assert np.allclose(mesh.bounds, body.bounds, atol=1e-3)
+    assert math.isclose(body.volume - mesh.volume, 30 * 50 * 8, rel_tol=1e-3)

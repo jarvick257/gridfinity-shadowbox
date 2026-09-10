@@ -1,4 +1,4 @@
-"""Backend 7c: a solid Gridfinity bin built in Python with manifold3d, pocket cut here.
+"""The Gridfinity bin solid, built with manifold3d, and the pocket boolean.
 
 Geometry follows the Gridfinity spec as encoded in Gridfinity Rebuilt's
 ``standard.scad`` (constants in :mod:`gridfinity_cutter.bins`): per-cell base
@@ -37,7 +37,6 @@ from gridfinity_cutter.bins import (
     STACKING_LIP_SUPPORT_MM,
     WALL_MM,
     BinParams,
-    BinResult,
 )
 
 CIRCLE_SEGMENTS = 48  # for corner radii and holes
@@ -48,8 +47,8 @@ SEAM_OVERLAP_MM = 0.5  # unioned pieces overlap by this much instead of touching
 PRINTABLE_INNER_RADIUS_MM = 1.0  # bridged top of a magnet hole without a screw hole
 
 
-class NativeError(extrude.ExtrudeError):
-    """The native bin could not be built or the pocket boolean failed."""
+class BinError(extrude.ExtrudeError):
+    """The bin could not be built or the pocket boolean failed."""
 
 
 # -- 2D helpers ------------------------------------------------------------
@@ -285,8 +284,8 @@ def lip_solid(
 
 
 def _bin_key(p: BinParams) -> BinParams:
-    """Placement and backend do not affect the bin itself."""
-    return replace(p, offset_x_mm=0.0, offset_y_mm=0.0, rotation_deg=0.0, backend="native")
+    """Placement does not affect the bin itself."""
+    return replace(p, offset_x_mm=0.0, offset_y_mm=0.0, rotation_deg=0.0)
 
 
 @lru_cache(maxsize=8)
@@ -324,7 +323,7 @@ def _bin_solid(p: BinParams) -> m3.Manifold:
     if cuts:
         solid = solid - m3.Manifold.batch_boolean(cuts, m3.OpType.Add)
     if solid.status() != m3.Error.NoError or solid.is_empty():
-        raise NativeError(f"native bin construction failed ({solid.status()})")
+        raise BinError(f"bin construction failed ({solid.status()})")
     return solid
 
 
@@ -348,7 +347,7 @@ def to_manifold(mesh: trimesh.Trimesh, what: str) -> m3.Manifold:
         )
     )
     if m.status() != m3.Error.NoError or m.is_empty() or m.volume() <= 0:
-        raise NativeError(f"{what} is not a closed solid ({m.status()})")
+        raise BinError(f"{what} is not a closed solid ({m.status()})")
     return m
 
 
@@ -357,22 +356,21 @@ def from_manifold(m: m3.Manifold) -> trimesh.Trimesh:
     return trimesh.Trimesh(vertices=out.vert_properties[:, :3], faces=out.tri_verts, process=False)
 
 
-# -- backend ----------------------------------------------------------------
+# -- bin with pocket ----------------------------------------------------------
 
 
-class NativeBackend:
-    """Finished bin: solid Gridfinity bin built in Python minus the object pocket."""
+def bin_with_pocket(
+    cutout: Polygon | MultiPolygon, height_mm: float, bin: BinParams
+) -> trimesh.Trimesh:
+    """The finished bin: the solid bin minus the object pocket.
 
-    name = "native"
-
-    def build(self, cutout: Polygon | MultiPolygon, height_mm: float, bin: BinParams) -> BinResult:
-        body = bin_solid(bin)
-        top = bin.pocket_top_mm
-        cutter = extrude.extrude_geometry(
-            cutout, height_mm + POCKET_OVERSHOOT_MM, z0=top - height_mm
-        )
-        solid = body - to_manifold(cutter, "pocket cutter")
-        if solid.is_empty() or not solid.volume() < body.volume():
-            raise NativeError("bin minus pocket produced an empty or unchanged mesh")
-        mesh = from_manifold(solid)
-        return BinResult(solid=mesh, context=None, note=f"native bin, {len(mesh.faces)} faces")
+    ``cutout`` is already placed in bin coordinates (mm, y up); the pocket is
+    ``height_mm`` deep, sunk down from ``bin.pocket_top_mm``.
+    """
+    body = bin_solid(bin)
+    top = bin.pocket_top_mm
+    cutter = extrude.extrude_geometry(cutout, height_mm + POCKET_OVERSHOOT_MM, z0=top - height_mm)
+    solid = body - to_manifold(cutter, "pocket cutter")
+    if solid.is_empty() or not solid.volume() < body.volume():
+        raise BinError("bin minus pocket produced an empty or unchanged mesh")
+    return from_manifold(solid)

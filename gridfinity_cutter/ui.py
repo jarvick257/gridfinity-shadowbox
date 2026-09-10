@@ -24,7 +24,7 @@ from pathlib import Path
 import gradio as gr
 
 from gridfinity_cutter import extrude, outline, sheet
-from gridfinity_cutter.bins import BACKEND_NAMES, LIP_STYLES
+from gridfinity_cutter.bins import LIP_STYLES
 from gridfinity_cutter.params import BinParams, GeometryParams, ImageParams, Params
 from gridfinity_cutter.session import Session, SessionError
 
@@ -71,10 +71,6 @@ def params_from_values(*values) -> Params:
     )
 
 
-def default_backend() -> str:
-    return "native"
-
-
 def _threshold_update(session: Session, params: Params):
     """Show the auto-chosen threshold on the (disabled) slider while auto is on."""
     if params.image.threshold is None:
@@ -101,8 +97,8 @@ def on_change(session: Session, *values):
         params = params_from_values(*values)
         img = session.overlay(params)
         thr = _threshold_update(session, params)
-        glb, res = session.render_scene(params)
-        return img, thr, str(glb), session.status(params, res)
+        glb, mesh = session.render_scene(params)
+        return img, thr, str(glb), session.status(params, mesh)
     except Errors as e:
         return gr.update(), gr.update(), gr.update(), f"error: {e}"
 
@@ -169,11 +165,6 @@ def print_sheet_js(spec: sheet.SheetSpec) -> str:
 # (field, accordion, factory taking the default value). Every BinParams field
 # appears exactly once; a test checks that.
 BIN_WIDGETS: list[tuple[str, str, Callable[[object], gr.components.Component]]] = [
-    (
-        "backend",
-        "size",
-        lambda d: gr.Dropdown(label="Bin backend", choices=list(BACKEND_NAMES), value=d),
-    ),
     (
         "units_x",
         "size",
@@ -296,8 +287,7 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
                 height = gr.Number(label="Pocket depth (mm)", value=10.0, minimum=0.1, step=0.5)
                 mirror = gr.Checkbox(label="Mirror (object goes in upside down)", value=False)
                 gr.Markdown("**Bin**")
-                bin_defaults = BinParams(backend=default_backend())
-                bin_widgets = build_bin_widgets(bin_defaults)
+                bin_widgets = build_bin_widgets(BinParams())
                 gr.Markdown("**Export**")
                 out_dir = gr.Textbox(label="Output folder", value=out0)
                 stem = gr.Textbox(

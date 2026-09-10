@@ -3,7 +3,7 @@
 Everything the web UI does lives here and is plain Python so it can be tested
 without a browser; ``ui.py`` only wires widgets to these methods.
 
-Cost model (design section 4): marker detection, homography, warp and the
+Cost model: marker detection, homography, warp and the
 paper-colour model run once per photo (``load``). Image parameters re-run only
 the threshold/contour part (``outline``, tens of ms). Geometry parameters
 re-run offset + placement + extrude (``render``).
@@ -24,7 +24,7 @@ import trimesh
 from shapely.geometry import LineString, MultiPolygon, Polygon, box
 
 from gridfinity_cutter import extrude, outline, sheet
-from gridfinity_cutter.bins import BIN_GAP_MM, LIP_ZONE_MM, BinResult
+from gridfinity_cutter.bins import BIN_GAP_MM, LIP_ZONE_MM
 from gridfinity_cutter.params import ImageParams, Params
 from gridfinity_cutter.sheet import DEFAULT_SPEC, SheetSpec
 
@@ -35,7 +35,6 @@ COLOR_OUTLINE = (40, 200, 60)  # RGB
 COLOR_CLEARANCE = (170, 240, 120)
 COLOR_BIN = (60, 120, 255)
 COLOR_GRID = (150, 180, 255)
-CUTOUT_RGBA = (60, 190, 90, 255)
 BIN_RGBA = (190, 190, 196, 255)
 
 
@@ -128,8 +127,8 @@ class Session:
         g = params.bin.grid_mm
         return (max(1, math.ceil(w / g)), max(1, math.ceil(d / g)))
 
-    def build(self, params: Params) -> tuple[Polygon | MultiPolygon, BinResult]:
-        """Placed outline in bin coordinates plus the backend's meshes."""
+    def build(self, params: Params) -> tuple[Polygon | MultiPolygon, trimesh.Trimesh]:
+        """Placed outline in bin coordinates plus the finished bin mesh."""
         geom = self.offset_geometry(params)
         return extrude.build_in_bin(
             geom, params.geometry.height_mm, params.bin, params.geometry.mirror
@@ -197,33 +196,23 @@ class Session:
         cv2.polylines(img, [px(state.polygon_mm)], True, COLOR_OUTLINE, 2, cv2.LINE_AA)
         return img
 
-    def scene(self, params: Params) -> tuple[trimesh.Scene, BinResult]:
-        """Viewer scene: the finished bin (real backends) or the pocket plus a reference block."""
-        _, res = self.build(params)
-        scene = trimesh.Scene()
-        if res.context is None and params.bin.backend != "none":
-            # Only the finished bin: drawing the pocket inside it would z-fight with the void.
-            solid = res.solid.copy()
-            solid.visual = trimesh.visual.ColorVisuals(
-                solid, vertex_colors=np.tile(BIN_RGBA, (len(solid.vertices), 1))
-            )
-            scene.add_geometry(solid, geom_name="bin")
-            return scene, res
-        solid = res.solid.copy()
+    def scene(self, params: Params) -> tuple[trimesh.Scene, trimesh.Trimesh]:
+        """Viewer scene: the finished bin with the pocket (what the STL contains)."""
+        _, mesh = self.build(params)
+        solid = mesh.copy()
         solid.visual = trimesh.visual.ColorVisuals(
-            solid, vertex_colors=np.tile(CUTOUT_RGBA, (len(solid.vertices), 1))
+            solid, vertex_colors=np.tile(BIN_RGBA, (len(solid.vertices), 1))
         )
-        scene.add_geometry(solid, geom_name="cutout")
-        if res.context is not None:
-            scene.add_geometry(res.context, geom_name="bin")
-        return scene, res
+        scene = trimesh.Scene()
+        scene.add_geometry(solid, geom_name="bin")
+        return scene, mesh
 
-    def render_scene(self, params: Params) -> tuple[Path, BinResult]:
-        """Write the viewer scene as GLB (fixed path per session) and return it with the result."""
-        scene, res = self.scene(params)
+    def render_scene(self, params: Params) -> tuple[Path, trimesh.Trimesh]:
+        """Write the viewer scene as GLB (fixed path per session) and return it with the mesh."""
+        scene, mesh = self.scene(params)
         path = self.workdir / "scene.glb"
         path.write_bytes(scene.export(file_type="glb"))
-        return path, res
+        return path, mesh
 
     def render(self, params: Params) -> Path:
         return self.render_scene(params)[0]
@@ -233,7 +222,7 @@ class Session:
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
         state = self.outline(params.image)
-        _, res = self.build(params)
+        _, mesh = self.build(params)
         svg, stl, js = out / f"{stem}.svg", out / f"{stem}.stl", out / f"{stem}.params.json"
         photo = self.photo_path.name if self.photo_path else None
         outline.write_svg(
@@ -242,11 +231,11 @@ class Session:
             f"gridfinity-cutter outline of {photo}; px_per_mm={params.image.px_per_mm:g} "
             f"tolerance_mm={params.image.tolerance_mm:g} threshold={state.threshold:.1f}",
         )
-        res.solid.export(str(stl))
+        mesh.export(str(stl))
         Params(params.image, params.geometry, params.bin, photo=photo).to_json(js)
         return [svg, stl, js]
 
-    def status(self, params: Params, res: BinResult | None = None) -> str:
+    def status(self, params: Params, mesh: trimesh.Trimesh | None = None) -> str:
         state = self.outline(params.image)
         w, h = state.polygon_mm.max(axis=0) - state.polygon_mm.min(axis=0)
         thr = "auto" if params.image.threshold is None else "fixed"
@@ -269,7 +258,7 @@ class Session:
         lines.append(
             f"bin {b.units_x} x {b.units_y} u ({b.grid_mm:g} mm grid), "
             f"{bw:g} x {bd:g} x {bh:g} mm excl. lip{' + lip' if b.has_lip else ''}, "
-            f"pocket {top - depth:g}..{top:g} mm, backend {b.backend}"
+            f"pocket {top - depth:g}..{top:g} mm"
         )
         if depth > b.infill_height_mm:
             lines.append(
@@ -283,10 +272,8 @@ class Session:
             lines.append(
                 "mirror: bin footprint drawn as seen from below; +offset Y moves the object down on the photo"
             )
-        if res is not None:
-            lines.append(f"STL: {len(res.solid.faces)} faces, {res.solid.volume:.0f} mm^3")
-            if res.note:
-                lines.append(res.note)
+        if mesh is not None:
+            lines.append(f"STL: {len(mesh.faces)} faces, {mesh.volume:.0f} mm^3")
         return "  \n".join(lines)  # trailing double space = Markdown line break
 
     def _near_wall(self, params: Params) -> bool:
