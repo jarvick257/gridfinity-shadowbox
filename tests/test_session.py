@@ -122,3 +122,21 @@ def test_status_warns_on_deep_pocket(session):
     assert "WARNING: pocket deeper" in text and "threshold" in text
     assert "WARNING" not in session.status(params(units_x=2, units_y=5, gridz=3, height_mm=12))
     assert "WARNING: cutout within" in session.status(params(units_x=2, units_y=4, height_mm=5))
+
+
+def test_native_backend_scene_and_export(session, tmp_path):
+    p = params(units_x=2, units_y=5, gridz=3, height_mm=8, backend="native", magnet_holes=True)
+    scene = trimesh.load(str(session.render(p)))
+    assert "bin" in scene.geometry  # the finished bin, no reference block
+    bin_mesh = scene.geometry["bin"]
+    assert np.allclose(bin_mesh.bounds[0], (0.25, 0.25, 0), atol=1e-4)
+    assert np.allclose(bin_mesh.bounds[1, :2], (83.75, 209.75), atol=1e-4)
+    assert 21 + 3.4 < bin_mesh.bounds[1, 2] < 21 + 3.7  # stacking lip with rounded tip
+    assert "backend native" in session.status(p)
+
+    _, stl, js = session.export(p, tmp_path / "out", "obj")
+    mesh = trimesh.load(str(stl))
+    assert mesh.is_volume
+    rc = cli.main(["run", str(FIXTURE), "--params", str(js), "-o", str(tmp_path / "cli.stl")])
+    assert rc == 0
+    assert abs(trimesh.load(str(tmp_path / "cli.stl")).volume - mesh.volume) < 1e-3 * mesh.volume

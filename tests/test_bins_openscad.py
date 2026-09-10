@@ -41,7 +41,7 @@ def test_render_1x1_bin_in_bin_frame():
 
 
 def test_render_uses_cache(monkeypatch):
-    p = BinParams(1, 2, 2, include_lip=False)
+    p = BinParams(1, 2, 2, lip="none")
     stl, meta = scad.render_bin(p)
     assert meta["cached"] is False
 
@@ -62,7 +62,7 @@ def test_render_uses_cache(monkeypatch):
         BinParams(1, 1, 20, gridz_define=2),
         BinParams(1, 1, 25.4, gridz_define=3),
         BinParams(1, 1, 22, gridz_define=2, enable_zsnap=True),
-        BinParams(1, 1, 3, include_lip=False),
+        BinParams(1, 1, 3, lip="none"),
         BinParams(1, 1, 3, height_internal_mm=5),
         BinParams(1, 1, 3, height_internal_mm=-2),
     ],
@@ -76,16 +76,11 @@ def test_height_rules_agree_with_library(p):
 
 
 def test_half_grid_and_options():
-    p = BinParams(
-        2, 2, 2, half_grid=True, include_lip=False, magnet_holes=True, refined_holes=False
-    )
+    p = BinParams(2, 2, 2, half_grid=True, lip="none", magnet_holes=True)
     mesh = scad.load_bin(scad.render_bin(p)[0])
     assert np.allclose(mesh.bounds, [[0.25, 0.25, 0], [41.75, 41.75, 14]], atol=1e-3)
-    p2 = BinParams(2, 1, 3, divx=2, divy=1, scoop=0.5, style_tab=0)
-    with_compartments = scad.load_bin(scad.render_bin(p2)[0])
-    assert with_compartments.volume < mesh.volume * 2  # compartments cut out of a 2x1
-    # Compartment tops share edges with the infill top: not "watertight" for trimesh, fine for Manifold.
-    assert scad.to_manifold(with_compartments, "bin").volume() > 0
+    plain = scad.load_bin(scad.render_bin(BinParams(2, 2, 2, half_grid=True, lip="none"))[0])
+    assert mesh.volume < plain.volume  # magnet holes cut out
 
 
 def test_build_cuts_pocket():

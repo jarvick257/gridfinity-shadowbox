@@ -41,7 +41,8 @@ def test_bin_height_mirrors_library(gridz, define, zsnap, height):
 
 def test_pocket_top():
     assert BinParams(gridz=3).pocket_top_mm == pytest.approx(19.8)  # lip support 1.2 mm
-    assert BinParams(gridz=3, include_lip=False).pocket_top_mm == pytest.approx(21)
+    assert BinParams(gridz=3, lip="none").pocket_top_mm == pytest.approx(21)
+    assert BinParams(gridz=3, lip="reduced").pocket_top_mm == pytest.approx(19.8)
     assert BinParams(gridz=3, height_internal_mm=5).pocket_top_mm == pytest.approx(12)
     assert BinParams(gridz=3, height_internal_mm=-2).pocket_top_mm == pytest.approx(17.8)
     assert BinParams(gridz=1).pocket_top_mm == pytest.approx(7)  # no solid above the base
@@ -53,19 +54,15 @@ def test_pocket_top():
     [
         {"units_x": 0},
         {"gridz_define": 4},
-        {"scoop": 1.5},
-        {"scoop": -0.1},
-        {"style_tab": 6},
-        {"magnet_holes": True},  # with the default refined_holes
+        {"lip": "huge"},
         {"height_internal_mm": 20.5},  # > 21 - 1.2 with lip
-        {"cylinder_diameter_mm": 0},
     ],
 )
 def test_validation(kw):
     with pytest.raises(ValueError):
         BinParams(**kw)
-    BinParams(magnet_holes=True, refined_holes=False)
-    BinParams(height_internal_mm=20.5, include_lip=False)
+    BinParams(magnet_holes=True, screw_holes=True)
+    BinParams(height_internal_mm=20.5, lip="none")
 
 
 def test_positional_fields_are_only_size():
@@ -75,6 +72,7 @@ def test_positional_fields_are_only_size():
 
 def test_get_backend_names():
     assert bins.get_backend("openscad").name == "openscad"
+    assert bins.get_backend("native").name == "native"
     with pytest.raises(ValueError, match="unknown bin backend"):
         bins.get_backend("nope")
 
@@ -83,9 +81,10 @@ def test_get_backend_names():
 
 
 def test_scad_defines_literals():
-    d = scad.scad_defines(BinParams(2, 3, 2.5, include_lip=False, scoop=0.5, divx=2))
+    d = scad.scad_defines(BinParams(2, 3, 2.5, lip="none", magnet_holes=True))
     assert d[:3] == ["-Dgridx=2", "-Dgridy=3", "-Dgridz=2.5"]
-    assert "-Dinclude_lip=false" in d and "-Dscoop=0.5" in d and "-Ddivx=2" in d
+    assert "-Dinclude_lip=false" in d and "-Dmagnet_holes=true" in d and "-Ddivx=0" in d
+    assert "-Drefined_holes=false" in d
     assert not any(a.startswith(("-Doffset", "-Drotation", "-Dbackend")) for a in d)
 
 
@@ -95,15 +94,14 @@ def test_scad_vars_match_wrapper_and_library():
     assert set(scad.SCAD_VARS.values()) <= top_level
     fields = set(scad.SCAD_VARS)
     assert fields == {f for f in BinParams.__dataclass_fields__} - {
+        "lip",
         "offset_x_mm",
         "offset_y_mm",
         "rotation_deg",
         "backend",
     }
-    if LIB_BINS.is_file():
-        customizer = LIB_BINS.read_text().split("// ===== IMPLEMENTATION")[0]
-        lib_vars = set(re.findall(r"^(\w+)\s*=", customizer, re.MULTILINE)) - {"hole_options"}
-        assert lib_vars <= set(scad.SCAD_VARS.values())
+    defined = set(scad.SCAD_VARS.values()) | set(scad.SCAD_FIXED) | {"include_lip"}
+    assert defined <= top_level
 
 
 def test_cache_key_ignores_placement():

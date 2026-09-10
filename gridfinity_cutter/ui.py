@@ -24,8 +24,7 @@ from pathlib import Path
 import gradio as gr
 
 from gridfinity_cutter import extrude, outline, sheet
-from gridfinity_cutter.bins import BACKEND_NAMES, PLACE_TAB_NAMES, STYLE_TAB_NAMES
-from gridfinity_cutter.bins import openscad as scad
+from gridfinity_cutter.bins import BACKEND_NAMES, LIP_STYLES
 from gridfinity_cutter.params import BinParams, GeometryParams, ImageParams, Params
 from gridfinity_cutter.session import Session, SessionError
 
@@ -73,7 +72,7 @@ def params_from_values(*values) -> Params:
 
 
 def default_backend() -> str:
-    return "openscad" if scad.available() else "none"
+    return "native"
 
 
 def _threshold_update(session: Session, params: Params):
@@ -201,7 +200,7 @@ BIN_WIDGETS: list[tuple[str, str, Callable[[object], gr.components.Component]]] 
         ),
     ),
     ("enable_zsnap", "size", lambda d: gr.Checkbox(label="Snap height to 7 mm", value=d)),
-    ("include_lip", "size", lambda d: gr.Checkbox(label="Stacking lip", value=d)),
+    ("lip", "size", lambda d: gr.Dropdown(label="Stacking lip", choices=list(LIP_STYLES), value=d)),
     (
         "height_internal_mm",
         "size",
@@ -211,64 +210,15 @@ BIN_WIDGETS: list[tuple[str, str, Callable[[object], gr.components.Component]]] 
     ("offset_x_mm", "place", lambda d: gr.Number(label="Offset X (mm)", value=d, step=0.5)),
     ("offset_y_mm", "place", lambda d: gr.Number(label="Offset Y (mm)", value=d, step=0.5)),
     ("rotation_deg", "place", lambda d: gr.Number(label="Rotation (deg, CCW)", value=d, step=5)),
-    (
-        "divx",
-        "comp",
-        lambda d: gr.Slider(
-            label="Divisions X (0 = solid)", minimum=0, maximum=12, step=1, value=d
-        ),
-    ),
-    (
-        "divy",
-        "comp",
-        lambda d: gr.Slider(
-            label="Divisions Y (0 = solid)", minimum=0, maximum=12, step=1, value=d
-        ),
-    ),
-    (
-        "depth_mm",
-        "comp",
-        lambda d: gr.Number(label="Compartment depth (mm, 0 = full)", value=d, step=0.5),
-    ),
-    (
-        "style_tab",
-        "comp",
-        lambda d: gr.Dropdown(
-            label="Label tab", choices=list(zip(STYLE_TAB_NAMES, range(6))), value=d
-        ),
-    ),
-    (
-        "place_tab",
-        "comp",
-        lambda d: gr.Dropdown(
-            label="Tabs on", choices=list(zip(PLACE_TAB_NAMES, range(2))), value=d
-        ),
-    ),
-    ("scoop", "comp", lambda d: gr.Slider(label="Scoop", minimum=0, maximum=1, step=0.1, value=d)),
-    ("cut_cylinders", "comp", lambda d: gr.Checkbox(label="Cylindrical compartments", value=d)),
-    (
-        "cylinder_diameter_mm",
-        "comp",
-        lambda d: gr.Number(label="Cylinder diameter (mm)", value=d, step=0.5),
-    ),
-    (
-        "cylinder_chamfer_mm",
-        "comp",
-        lambda d: gr.Number(label="Cylinder chamfer (mm)", value=d, step=0.1),
-    ),
-    ("refined_holes", "holes", lambda d: gr.Checkbox(label="Refined holes", value=d)),
     ("magnet_holes", "holes", lambda d: gr.Checkbox(label="Magnet holes (6 x 2 mm)", value=d)),
     ("screw_holes", "holes", lambda d: gr.Checkbox(label="Screw holes (M3)", value=d)),
     ("only_corners", "holes", lambda d: gr.Checkbox(label="Holes only in the corners", value=d)),
-    ("crush_ribs", "holes", lambda d: gr.Checkbox(label="Crush ribs", value=d)),
     ("chamfer_holes", "holes", lambda d: gr.Checkbox(label="Chamfered holes", value=d)),
     ("printable_hole_top", "holes", lambda d: gr.Checkbox(label="Printable hole tops", value=d)),
-    ("enable_thumbscrew", "holes", lambda d: gr.Checkbox(label="Thumbscrew hole", value=d)),
 ]
 BIN_ACCORDIONS = (
     ("size", "Bin size & height", True),
     ("place", "Cutout placement", True),
-    ("comp", "Compartments", False),
     ("holes", "Base holes", False),
 )
 
@@ -347,8 +297,6 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
                 mirror = gr.Checkbox(label="Mirror (object goes in upside down)", value=False)
                 gr.Markdown("**Bin**")
                 bin_defaults = BinParams(backend=default_backend())
-                if bin_defaults.backend == "none":
-                    gr.Markdown(f"_finished bins unavailable: {scad.unavailable_reason()}_")
                 bin_widgets = build_bin_widgets(bin_defaults)
                 gr.Markdown("**Export**")
                 out_dir = gr.Textbox(label="Output folder", value=out0)

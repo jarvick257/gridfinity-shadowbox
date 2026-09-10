@@ -203,7 +203,7 @@ def test_place_in_bin_centre_offset_and_rotation():
 
 def test_run_in_bin_coordinates(tmp_path):
     out = tmp_path / "o.stl"
-    bin_ = BinParams(units_x=1, units_y=2, gridz=3, include_lip=False)
+    bin_ = BinParams(units_x=1, units_y=2, gridz=3, lip="none")
     res = extrude.run(rect_svg(tmp_path), out, height_mm=8, bin=bin_)
     mesh = load(out)
     assert np.allclose(mesh.bounds[:, 2], (21 - 8, 21))
@@ -240,7 +240,8 @@ def test_cli_bin_options(tmp_path, capsys):
             "28",
             "--bin-gridz-define",
             "2",
-            "--no-bin-include-lip",
+            "--bin-lip",
+            "none",
             "--rotation",
             "90",
             "-o",

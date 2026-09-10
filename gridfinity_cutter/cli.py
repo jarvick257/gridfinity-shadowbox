@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from gridfinity_cutter import extrude, outline, sheet
-from gridfinity_cutter.bins import BACKEND_NAMES, BinParams
+from gridfinity_cutter.bins import BACKEND_NAMES, LIP_STYLES, BinParams
 from gridfinity_cutter.params import BIN_GENERIC_FIELDS, Params, ParamsError
 
 DEFAULT_UI_PORT = 7860
@@ -244,26 +244,16 @@ BIN_HELP: dict[str, str] = {
     "2 = external mm excl. lip, 3 = external mm incl. lip",
     "enable_zsnap": "snap the height to the nearest 7 mm increment",
     "height_internal_mm": "override the solid block height in mm (0 = default)",
-    "include_lip": "stacking lip on top (not included in the height)",
+    "lip": "stacking lip: standard (4.4 mm), reduced (2.6 mm) or none; not included in the height",
     "half_grid": "half-size (21 mm) grid; implies --bin-only-corners",
-    "divx": "compartments along x cut by the library (0 = solid bin)",
-    "divy": "compartments along y cut by the library (0 = solid bin)",
-    "depth_mm": "compartment depth in mm (0 = full depth)",
-    "cut_cylinders": "cylindrical compartments instead of rectangular ones",
-    "cylinder_diameter_mm": "diameter of the cylindrical compartments",
-    "cylinder_chamfer_mm": "chamfer around the top rim of the cylinders",
-    "style_tab": "label tab: 0 full, 1 auto, 2 left, 3 center, 4 right, 5 none",
-    "place_tab": "tabs on: 0 every division, 1 top-left division only",
-    "scoop": "scoop weight 0..1 (0 disables)",
     "only_corners": "magnet/screw holes only in the outer corners",
-    "refined_holes": "gridfinity-refined hole style (not with magnet holes)",
     "magnet_holes": "holes for 6 x 2 mm magnets",
     "screw_holes": "holes for M3 screws",
-    "crush_ribs": "crush ribs in the magnet holes",
     "chamfer_holes": "chamfer on the magnet/screw holes",
-    "printable_hole_top": "hole tops printable without supports",
-    "enable_thumbscrew": "gridfinity-refined thumbscrew hole in each base",
+    "printable_hole_top": "magnet hole tops bridged so they print without supports",
 }
+# string-valued BinParams fields and their allowed values
+BIN_CHOICES: dict[str, tuple[str, ...]] = {"lip": LIP_STYLES}
 
 
 def _add_bin_options(e: argparse.ArgumentParser) -> None:
@@ -271,7 +261,7 @@ def _add_bin_options(e: argparse.ArgumentParser) -> None:
         "bin placement",
         "With --bin-units the STL is written in bin coordinates: x/y from the bin's "
         "grid corner, z from the bin bottom, pocket sunk into the bin's solid top. "
-        "With --bin-backend openscad the STL is the finished Gridfinity bin.",
+        "With --bin-backend native (or openscad) the STL is the finished Gridfinity bin.",
     )
     g.add_argument(
         "--bin-units",
@@ -304,7 +294,7 @@ def _add_bin_options(e: argparse.ArgumentParser) -> None:
         help="rotate the cutout counter-clockwise (seen from above)",
     )
     g.add_argument("--bin-backend", choices=BACKEND_NAMES, default="none")
-    o = e.add_argument_group("bin options (Gridfinity Rebuilt)")
+    o = e.add_argument_group("bin options")
     defaults = BinParams()
     for name in BIN_GENERIC_FIELDS:
         flag = "--bin-" + name.replace("_", "-")
@@ -318,6 +308,10 @@ def _add_bin_options(e: argparse.ArgumentParser) -> None:
                 action=argparse.BooleanOptionalAction,
                 default=default,
                 help=help_text,
+            )
+        elif name in BIN_CHOICES:
+            o.add_argument(
+                flag, dest=dest, choices=BIN_CHOICES[name], default=default, help=help_text
             )
         else:
             metavar = "MM" if name.endswith("_mm") else "N"

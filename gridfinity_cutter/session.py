@@ -268,7 +268,7 @@ class Session:
         depth = params.geometry.height_mm
         lines.append(
             f"bin {b.units_x} x {b.units_y} u ({b.grid_mm:g} mm grid), "
-            f"{bw:g} x {bd:g} x {bh:g} mm excl. lip{' + lip' if b.include_lip else ''}, "
+            f"{bw:g} x {bd:g} x {bh:g} mm excl. lip{' + lip' if b.has_lip else ''}, "
             f"pocket {top - depth:g}..{top:g} mm, backend {b.backend}"
         )
         if depth > b.infill_height_mm:

@@ -58,24 +58,19 @@ SCAD_VARS: dict[str, str] = {
     "gridz_define": "gridz_define",
     "height_internal_mm": "height_internal",
     "enable_zsnap": "enable_zsnap",
-    "include_lip": "include_lip",
-    "divx": "divx",
-    "divy": "divy",
-    "depth_mm": "depth",
-    "cut_cylinders": "cut_cylinders",
-    "cylinder_diameter_mm": "cd",
-    "cylinder_chamfer_mm": "c_chamfer",
-    "style_tab": "style_tab",
-    "place_tab": "place_tab",
-    "scoop": "scoop",
     "only_corners": "only_corners",
-    "refined_holes": "refined_holes",
     "magnet_holes": "magnet_holes",
     "screw_holes": "screw_holes",
-    "crush_ribs": "crush_ribs",
     "chamfer_holes": "chamfer_holes",
     "printable_hole_top": "printable_hole_top",
-    "enable_thumbscrew": "enable_thumbscrew",
+}
+# Library options without a BinParams field: the bin is solid, plain holes only.
+SCAD_FIXED: dict[str, bool | int | float] = {
+    "divx": 0,
+    "divy": 0,
+    "refined_holes": False,
+    "crush_ribs": False,
+    "enable_thumbscrew": False,
 }
 
 
@@ -99,8 +94,14 @@ def scad_literal(value: Any) -> str:
 
 
 def scad_defines(p: BinParams) -> list[str]:
-    """``-D name=value`` for every bin option, in ``SCAD_VARS`` order."""
-    return [f"-D{var}={scad_literal(getattr(p, field))}" for field, var in SCAD_VARS.items()]
+    """``-D name=value`` for every bin option, in ``SCAD_VARS`` order.
+
+    ``lip`` maps onto the library's ``include_lip`` (it has no reduced lip).
+    """
+    defines = [f"-D{var}={scad_literal(getattr(p, field))}" for field, var in SCAD_VARS.items()]
+    defines.append(f"-Dinclude_lip={scad_literal(p.has_lip)}")
+    defines += [f"-D{var}={scad_literal(val)}" for var, val in SCAD_FIXED.items()]
+    return defines
 
 
 # -- locating OpenSCAD ------------------------------------------------------

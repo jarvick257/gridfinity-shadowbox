@@ -59,9 +59,9 @@ def test_handlers_report_errors():
     _, _, status = ui.on_image_input(session, *VALUES)
     assert status.startswith("error:") and "load a photo" in status
     bad = list(VALUES)
-    bad[IDX["magnet_holes"]] = True  # with refined holes: invalid combination
-    assert "error: refined_holes" in ui.on_change(session, *bad)[3]
-    assert "error: refined_holes" in ui.on_export(session, "", "x", *bad)[1]
+    bad[IDX["height_internal_mm"]] = 20.5  # above the lip support of a 21 mm bin
+    assert "error: height_internal_mm" in ui.on_change(session, *bad)[3]
+    assert "error: height_internal_mm" in ui.on_export(session, "", "x", *bad)[1]
     out = ui.on_load(session, None, *VALUES)
     assert "drop a photo" in out[-1]
 
