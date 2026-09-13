@@ -1,6 +1,6 @@
 [project]
 name = "gridfinity-shadowbox"
-version = "0.1.0"
+version = "1.0.0"
 description = "Photo of an object -> outline SVG -> Gridfinity cutout STL"
 requires-python = ">=3.12"
 dependencies = [
