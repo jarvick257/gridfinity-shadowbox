@@ -48,7 +48,7 @@ Use `uv` (installed; the venv is Python 3.12):
 ```
 uv sync --extra ui               # normal setup: deps + Gradio for the web UI
 uv sync                          # headless/CLI-only setup
-uv run shadowbox ui photo.jpg   # the main interface, http://127.0.0.1:7860
+uv run shadowbox ui photo.jpg   # the main interface, http://127.0.0.1:7860 (--host to expose)
 uv run shadowbox sheet -o sheet.pdf
 uv run shadowbox outline photo.jpg -o object.svg
 uv run shadowbox extrude object.svg --height 20 -o object.stl
@@ -58,7 +58,19 @@ uv run shadowbox extrude object.svg --height 20 --bin-units 2 2 -o bin.stl  # fi
 uv run pytest                    # all tests (UI tests skip without the ui extra)
 uv run pytest tests/test_outline.py -k calibration   # single test
 uv run ruff check . && uv run ruff format .
+docker build -t shadowbox .                                  # image: web UI by default, non-root
+docker run --rm -p 127.0.0.1:7860:7860 -v "$PWD:/data" shadowbox
+docker run --rm -v "$PWD:/data" shadowbox run photo.jpg --height 20 -o object.stl
 ```
+
+Docker: multi-stage `Dockerfile` (uv builder -> `python:3.12-slim`, venv in
+`/app/.venv`, user `shadowbox` uid 1000, workdir `/data`, entrypoint `shadowbox`,
+cmd `ui --no-browser`). The UI binds `127.0.0.1` unless `--host` or
+`SHADOWBOX_UI_HOST` says otherwise; the image sets `SHADOWBOX_UI_HOST=0.0.0.0`.
+`.github/workflows/docker.yml` runs only on `v*` tags: it smoke-tests an amd64
+build, then builds amd64+arm64 and pushes to `ghcr.io/jarvick257/gridfinity-shadowbox`
+(`X.Y.Z`, `X.Y`, `latest`). Releases (tag + GitHub release) follow the `release`
+skill in `.claude/skills/release/SKILL.md`; keep `pyproject.toml`'s version in step.
 
 Dependencies: `opencv-contrib-python-headless` (ArUco detection, perspective
 transform, contours), `numpy`, `reportlab` (sheet PDF), `svgelements` (SVG

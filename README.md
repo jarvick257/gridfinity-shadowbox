@@ -17,6 +17,30 @@ Needs [uv](https://docs.astral.sh/uv/) and Python 3.12+.
 uv sync --extra ui
 ```
 
+### Or with Docker
+
+No local Python needed. The image runs the web UI by default, as an unprivileged
+user (uid 1000), with `/data` as its working directory:
+
+```sh
+docker run --rm -p 127.0.0.1:7860:7860 -v "$PWD:/data" ghcr.io/jarvick257/gridfinity-shadowbox
+```
+
+Then open `http://127.0.0.1:7860`. Images are published for each
+[release](https://github.com/jarvick257/gridfinity-shadowbox/releases); pin one with
+`:X.Y.Z` instead of the default `latest`. The export folder is `/data`, i.e. the directory you
+mounted. The CLI works from the same image:
+
+```sh
+docker run --rm -v "$PWD:/data" ghcr.io/jarvick257/gridfinity-shadowbox run photo.jpg --height 15 --bin-units 2 2 -o bin.stl
+docker build -t shadowbox .   # build it yourself
+```
+
+- If your uid is not 1000, add `--user "$(id -u):$(id -g)"` so the container can
+  write to the mounted folder and the exported files belong to you.
+- Publish the port on `127.0.0.1` as above. The UI has no login, and anyone who
+  can reach it can write files wherever the container user may.
+
 ## Use it
 
 ```sh

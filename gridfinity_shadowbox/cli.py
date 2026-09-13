@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,9 @@ from gridfinity_shadowbox import extrude, outline, sheet
 from gridfinity_shadowbox.bins import LIP_STYLES, BinParams
 from gridfinity_shadowbox.params import BIN_GENERIC_FIELDS, Params, ParamsError
 
+DEFAULT_UI_HOST = "127.0.0.1"
 DEFAULT_UI_PORT = 7860
+UI_HOST_ENV = "SHADOWBOX_UI_HOST"  # set to 0.0.0.0 in the Docker image
 
 
 def _cmd_sheet(args: argparse.Namespace) -> int:
@@ -129,7 +132,7 @@ def _cmd_ui(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    ui.launch(photo=args.photo, port=args.port, open_browser=not args.no_browser)
+    ui.launch(photo=args.photo, host=args.host, port=args.port, open_browser=not args.no_browser)
     return 0
 
 
@@ -176,6 +179,12 @@ def build_parser(defaults: dict[str, Any] | None = None) -> argparse.ArgumentPar
 
     u = sub.add_parser("ui", help="interactive web UI on localhost (needs: uv sync --extra ui)")
     u.add_argument("photo", nargs="?", help="photo to load on start")
+    u.add_argument(
+        "--host",
+        default=os.environ.get(UI_HOST_ENV) or DEFAULT_UI_HOST,
+        help=f"address to listen on; 0.0.0.0 exposes the UI, e.g. in a container "
+        f"(default: ${UI_HOST_ENV} or {DEFAULT_UI_HOST})",
+    )
     u.add_argument("--port", type=int, default=DEFAULT_UI_PORT)
     u.add_argument("--no-browser", action="store_true", help="do not open a browser tab")
     u.set_defaults(func=_cmd_ui)

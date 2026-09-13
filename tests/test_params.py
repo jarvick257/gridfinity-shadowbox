@@ -84,3 +84,11 @@ def test_missing_height_and_bad_params(tmp_path, capsys):
     with pytest.raises(SystemExit):
         cli.main(["extrude", "in.svg", "--params", str(bad)])
     assert "unknown top-level" in capsys.readouterr().err
+
+
+def test_ui_host_defaults_to_localhost_and_follows_env(monkeypatch):
+    monkeypatch.delenv(cli.UI_HOST_ENV, raising=False)
+    assert cli.build_parser().parse_args(["ui"]).host == "127.0.0.1"
+    monkeypatch.setenv(cli.UI_HOST_ENV, "0.0.0.0")
+    assert cli.build_parser().parse_args(["ui"]).host == "0.0.0.0"
+    assert cli.build_parser().parse_args(["ui", "--host", "::1"]).host == "::1"

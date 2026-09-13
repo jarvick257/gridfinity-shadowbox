@@ -405,10 +405,15 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
     return app
 
 
-def launch(photo: str | Path | None = None, port: int = 7860, open_browser: bool = True) -> None:
+def launch(
+    photo: str | Path | None = None,
+    host: str = "127.0.0.1",
+    port: int = 7860,
+    open_browser: bool = True,
+) -> None:
     app = build_app(photo)
     app.launch(
-        server_name="127.0.0.1",
+        server_name=host,
         server_port=port,
         share=False,
         inbrowser=open_browser,
