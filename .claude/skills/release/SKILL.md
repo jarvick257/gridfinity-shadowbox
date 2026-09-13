@@ -142,8 +142,14 @@ agreed to, and never move or delete a pushed tag without asking (see *Mistakes*)
 
 ## First-time setup notes
 
-- A new GHCR package is **private**. After the first successful run, the owner
-  makes it public under *GitHub → Packages → gridfinity-shadowbox → Package
-  settings*, or `docker pull` needs a login.
+- The package lives under the owner's profile:
+  https://github.com/users/jarvick257/packages/container/package/gridfinity-shadowbox.
+  It shows up in the repo's *Packages* sidebar only if the multi-arch index
+  carries `org.opencontainers.image.source`. The workflow sets that as an index
+  annotation, so keep `DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index` and the
+  `annotations:` input. Check that anonymous pulls work (the package must be
+  public):
+  `DOCKER_CONFIG=$(mktemp -d) docker manifest inspect ghcr.io/jarvick257/gridfinity-shadowbox:X.Y.Z`
+  (an empty config, so no stored login is used).
 - GitHub Actions caches are scoped per ref, so each tag build starts cold. That's
   expected.

@@ -34,6 +34,10 @@ jobs:
 
       - id: meta
         uses: docker/metadata-action@v6
+        env:
+          # GitHub links a multi-arch package to this repo via the index's
+          # org.opencontainers.image.source annotation, not the per-arch labels.
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: ${{ env.IMAGE }}
           # v1.2.3 -> 1.2.3, 1.2 and latest; prereleases (v1.2.3-rc.1) get only their own tag
@@ -70,5 +74,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
