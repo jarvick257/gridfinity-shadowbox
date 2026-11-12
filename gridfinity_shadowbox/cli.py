@@ -85,6 +85,7 @@ def _run_extrude(args: argparse.Namespace, svg: str, stl: str) -> int:
             curve_tolerance_mm=args.curve_tolerance,
             bin=bin_params,
             relief=relief,
+            positive=args.positive,
         )
     except (extrude.ExtrudeError, ValueError) as e:
         print(f"extrude: {e}", file=sys.stderr)
@@ -97,7 +98,8 @@ def _run_extrude(args: argparse.Namespace, svg: str, stl: str) -> int:
     if bin_params is not None:
         bw, bd, bh = bin_params.size_mm
         where = (
-            f", in a {bin_params.units_x} x {bin_params.units_y} u bin, gridz {bin_params.gridz:g} "
+            f", {'positive of the pocket ' if args.positive else ''}"
+            f"in a {bin_params.units_x} x {bin_params.units_y} u bin, gridz {bin_params.gridz:g} "
             f"({bw:g} x {bd:g} x {bh:g} mm excl. lip)"
         )
     print(
@@ -333,6 +335,13 @@ def _add_bin_options(e: argparse.ArgumentParser) -> None:
         metavar=("X", "Y"),
         default=None,
         help="bin footprint in Gridfinity units",
+    )
+    g.add_argument(
+        "--positive",
+        action="store_true",
+        help="write the solid cut out of the bin (outline incl. clearance and relief, "
+        "pocket depth) instead of the finished bin, in the same bin coordinates; "
+        "without --bin-units the STL is always this solid, at the origin",
     )
     g.add_argument(
         "--bin-height",

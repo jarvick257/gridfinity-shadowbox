@@ -219,6 +219,17 @@ def test_run_in_bin_coordinates(tmp_path, solid_at):
     assert not solid_at(mesh, 21, 42, 21 - 4) and solid_at(mesh, 21, 42, 21 - 12)
 
 
+def test_run_positive_in_bin_coordinates(tmp_path):
+    out = tmp_path / "p.stl"
+    bin_ = BinParams(units_x=1, units_y=2, gridz=3)  # standard lip: solid top at 19.8 mm
+    res = extrude.run(rect_svg(tmp_path), out, height_mm=8, bin=bin_, positive=True)
+    mesh = load(out)
+    assert mesh.is_watertight
+    assert np.allclose(mesh.bounds, [[6, 17, 19.8 - 8], [36, 67, 19.8]])
+    assert math.isclose(mesh.volume, 30 * 50 * 8, rel_tol=1e-6)  # float32 STL
+    assert np.allclose(res.size_mm, (30, 50, 8))
+
+
 def test_pocket_below_lip_support(solid_at):
     bin_ = BinParams(units_x=2, units_y=1, gridz=2)
     mesh = build_bin(extrude.place_in_bin(cad_rect(), bin_), 5.0, bin_)

@@ -35,7 +35,7 @@ def test_build_app():
 
 def test_handlers_end_to_end(tmp_path):
     session = Session()
-    img, thr, glb, status, ux, uy, stem = ui.on_load(session, str(FIXTURE), *VALUES)
+    img, thr, glb, status, ux, uy, stem = ui.on_load(session, str(FIXTURE), "bin", *VALUES)
     assert isinstance(img, np.ndarray) and Path(glb).suffix == ".glb"
     assert thr["interactive"] is False and thr["value"] == 40.0
     assert (ux, uy) == (2, 5) and stem == "box_cutter"
@@ -47,11 +47,16 @@ def test_handlers_end_to_end(tmp_path):
     assert thr["interactive"] is True and "threshold 55 (fixed)" in status
 
     values[IDX["units_x"]], values[IDX["units_y"]], values[IDX["rotation_deg"]] = 2, 5, 30
-    img, thr, glb, status = ui.on_change(session, *values)
+    img, thr, glb, status = ui.on_change(session, "bin", *values)
     assert "bin 2 x 5 u (42 mm grid), 84 x 210 x 21 mm excl. lip + lip" in status
+    assert "\nSTL:" in status
+    img, thr, glb, status = ui.on_change(session, "positive", *values)
+    assert "positive STL:" in status
 
-    files, status = ui.on_export(session, str(tmp_path), "knife", *values)
+    files, status = ui.on_export(session, str(tmp_path), "knife", False, *values)
     assert [Path(f).name for f in files] == ["knife.svg", "knife.stl", "knife.params.json"]
+    files, status = ui.on_export(session, str(tmp_path), "knife", True, *values)
+    assert "knife.positive.stl" in [Path(f).name for f in files]
 
 
 def test_handlers_report_errors():
@@ -60,9 +65,9 @@ def test_handlers_report_errors():
     assert status.startswith("error:") and "load a photo" in status
     bad = list(VALUES)
     bad[IDX["height_internal_mm"]] = 20.5  # above the lip support of a 21 mm bin
-    assert "error: height_internal_mm" in ui.on_change(session, *bad)[3]
-    assert "error: height_internal_mm" in ui.on_export(session, "", "x", *bad)[1]
-    out = ui.on_load(session, None, *VALUES)
+    assert "error: height_internal_mm" in ui.on_change(session, "bin", *bad)[3]
+    assert "error: height_internal_mm" in ui.on_export(session, "", "x", False, *bad)[1]
+    out = ui.on_load(session, None, "bin", *VALUES)
     assert "drop a photo" in out[-1]
 
 

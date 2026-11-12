@@ -42,7 +42,9 @@ With ``bin=BinParams(...)`` the solid is written in *bin coordinates* instead:
 the outline is rotated and moved inside a Gridfinity bin of the given size and
 the pocket is sunk into the top of the bin's solid part (see
 ``gridfinity_shadowbox.bins``); the STL is then the finished Gridfinity bin with
-the pocket cut out (``bins.geometry``).
+the pocket cut out (``bins.geometry``). With ``positive=True`` it is instead the
+solid that is cut away (outline incl. clearance and relief, exactly the pocket
+volume) in the same bin coordinates, so it lines up with the bin STL.
 """
 
 from __future__ import annotations
@@ -343,6 +345,18 @@ def build_in_bin(
     return placed, bin_with_pocket(placed, height_mm, bin)
 
 
+def build_positive(
+    geom: Polygon | MultiPolygon, height_mm: float, bin: BinParams, mirror: bool = False
+) -> tuple[Polygon | MultiPolygon, trimesh.Trimesh]:
+    """Offset outline (SVG plane) -> placed outline + the pocket's positive solid.
+
+    Same placement as ``build_in_bin``; the solid fills the pocket exactly
+    (``pocket_top_mm - height_mm`` .. ``pocket_top_mm``), without the cutter's overshoot.
+    """
+    placed = place_in_bin(flip_y(geom, mirror), bin)
+    return placed, extrude_geometry(placed, height_mm, z0=bin.pocket_top_mm - height_mm)
+
+
 def _result(geom, mesh: trimesh.Trimesh) -> ExtrudeResult:
     size = tuple(float(v) for v in mesh.extents)
     return ExtrudeResult(
@@ -364,12 +378,16 @@ def run(
     curve_tolerance_mm: float = DEFAULT_CURVE_TOLERANCE_MM,
     bin: BinParams | None = None,
     relief: ReliefParams | None = None,
+    positive: bool = False,
 ) -> ExtrudeResult:
-    """SVG -> STL. With ``bin`` the solid is in bin coordinates (see ``bins``)."""
+    """SVG -> STL. With ``bin`` the solid is in bin coordinates (see ``bins``):
+    the finished bin, or with ``positive`` the solid cut out of it."""
     geom = offset_polygon(load_polygons(svg, curve_tolerance_mm), clearance_mm)
     geom = add_relief(geom, relief)
     if bin is None:
         mesh = to_mesh(geom, height_mm, mirror=mirror)
+    elif positive:
+        _, mesh = build_positive(geom, height_mm, bin, mirror)
     else:
         _, mesh = build_in_bin(geom, height_mm, bin, mirror)
     mesh.export(str(output))

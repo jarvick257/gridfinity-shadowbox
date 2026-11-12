@@ -109,19 +109,19 @@ def on_image_input(session: Session, *values):
         return gr.update(), gr.update(), f"error: {e}"
 
 
-def on_change(session: Session, *values):
-    """Any parameter settled: overlay + threshold slider + 3D scene + status."""
+def on_change(session: Session, view: str, *values):
+    """Any parameter (or the preview toggle) settled: overlay + threshold slider + 3D scene + status."""
     try:
         params = params_from_values(*values)
         img = session.overlay(params)
         thr = _threshold_update(session, params)
-        glb, mesh = session.render_scene(params)
-        return img, thr, str(glb), session.status(params, mesh)
+        glb, mesh = session.render_scene(params, view)
+        return img, thr, str(glb), session.status(params, mesh, view)
     except Errors as e:
         return gr.update(), gr.update(), gr.update(), f"error: {e}"
 
 
-def on_load(session: Session, photo: str | None, *values):
+def on_load(session: Session, photo: str | None, view: str, *values):
     """Photo chosen (or px/mm changed): rectify, size the bin to fit, then everything."""
     if not photo:
         return (gr.update(),) * 6 + ("drop a photo of the object on the reference sheet",)
@@ -132,17 +132,17 @@ def on_load(session: Session, photo: str | None, *values):
         values = list(values)
         values[CONTROL_NAMES.index("units_x")] = ux
         values[CONTROL_NAMES.index("units_y")] = uy
-        img, thr, glb, status = on_change(session, *values)
+        img, thr, glb, status = on_change(session, view, *values)
         return img, thr, glb, status, ux, uy, Path(photo).stem
     except Errors as e:
         return (gr.update(),) * 6 + (f"error: {e}",)
 
 
-def on_export(session: Session, out_dir: str, stem: str, *values):
+def on_export(session: Session, out_dir: str, stem: str, positive: bool, *values):
     stem = (stem or "object").strip()
     try:
         params = params_from_values(*values)
-        files = session.export(params, out_dir or os.getcwd(), stem)
+        files = session.export(params, out_dir or os.getcwd(), stem, positive=bool(positive))
         return [str(f) for f in files], "wrote " + ", ".join(str(f) for f in files)
     except Errors as e:
         return gr.update(), f"error: {e}"
@@ -333,13 +333,25 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
                     label="File name (without extension)",
                     value=Path(photo0).stem if photo0 else "object",
                 )
+                export_positive = gr.Checkbox(
+                    label="Also export the positive (the cut-out solid, <name>.positive.stl)",
+                    value=False,
+                )
                 export_btn = gr.Button("Export SVG + STL + params.json", variant="primary")
                 files = gr.File(label="Written files", file_count="multiple", interactive=False)
             with gr.Column(scale=2):
                 overlay = gr.Image(label="Outline on photo", interactive=False, height=720)
             with gr.Column(scale=2):
+                view = gr.Radio(
+                    label="3D preview",
+                    choices=[
+                        ("Finished bin (<name>.stl)", "bin"),
+                        ("Positive (<name>.positive.stl)", "positive"),
+                    ],
+                    value="bin",
+                )
                 viewer = gr.Model3D(
-                    label="Finished bin (what the STL contains)",
+                    label="3D preview",
                     height=560,
                     clear_color=(0.96, 0.96, 0.97, 1.0),
                     camera_position=(45, 45, None),
@@ -367,11 +379,11 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
         units_x, units_y = bin_widgets["units_x"], bin_widgets["units_y"]
 
         load_out = [overlay, threshold, viewer, status, units_x, units_y, stem]
-        photo.upload(bind(on_load), [photo, *controls], load_out, **always)
+        photo.upload(bind(on_load), [photo, view, *controls], load_out, **always)
         for ev in (px_per_mm.submit, px_per_mm.blur):
-            ev(bind(on_load), [photo, *controls], load_out, **always)
+            ev(bind(on_load), [photo, view, *controls], load_out, **always)
         if photo0:
-            app.load(bind(on_load), [photo, *controls], load_out)
+            app.load(bind(on_load), [photo, view, *controls], load_out)
 
         img_out = [overlay, threshold, status]
         for ev in (threshold.input, tolerance.input, min_area.input, auto.input):
@@ -391,14 +403,17 @@ def build_app(initial_photo: str | Path | None = None, output_dir: str | Path | 
             auto.input,
             mirror.input,
             render_btn.click,
+            view.input,
         ]
         relief_widgets = (relief, relief_diameter, relief_count, relief_angle, relief_inset)
         for w in (clearance, height, *relief_widgets, *bin_widgets.values()):
             settle += settle_events(w)
         for ev in settle:
-            ev(bind(on_change), controls, all_out, concurrency_limit=1, **always)
+            ev(bind(on_change), [view, *controls], all_out, concurrency_limit=1, **always)
 
-        export_btn.click(bind(on_export), [out_dir, stem, *controls], [files, status], **always)
+        export_btn.click(
+            bind(on_export), [out_dir, stem, export_positive, *controls], [files, status], **always
+        )
         print_btn.click(None, js=print_sheet_js(session.spec))
 
     app.session = session  # type: ignore[attr-defined]

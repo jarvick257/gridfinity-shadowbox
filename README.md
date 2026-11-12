@@ -55,7 +55,8 @@ That opens `http://127.0.0.1:7860` in your browser. Everything happens there:
 2. **Photograph the object** lying on the sheet, roughly straight down, with all
    four markers visible. Drop the photo onto the *Photo* field.
 3. **Tune it.** The middle pane shows the detected outline drawn on the
-   rectified photo, the right pane a live 3D preview of the finished bin:
+   rectified photo, the right pane a live 3D preview of the finished bin (or, with
+   the toggle above it, of the positive — the solid that gets cut out):
    - *Outline* — threshold (automatic by default), simplification tolerance,
      minimum blob area.
    - *Cutout* — clearance for a looser or tighter fit, pocket depth, mirror.
@@ -64,7 +65,10 @@ That opens `http://127.0.0.1:7860` in your browser. Everything happens there:
    - *Bin* — size, height, lip style, magnet/screw holes. The bin size is
      auto-fitted to the object when you load the photo; change it if you like.
 4. **Export SVG + STL + params.json** into the folder you pick. The STL is the
-   finished bin, ready to slice.
+   finished bin, ready to slice. Tick *Also export the positive* to get
+   `<name>.positive.stl` as well: the solid that is cut out of the bin (outline
+   with clearance and finger relief, pocket depth), in the same coordinates as
+   the bin so the two line up when imported together.
 
 Pass a photo on the command line to have it loaded on start:
 
@@ -89,6 +93,7 @@ The `params.json` the UI exports replays a session exactly:
 
 ```sh
 uv run shadowbox extrude object.svg --params object.params.json -o object.stl
+uv run shadowbox extrude object.svg --params object.params.json --positive -o object.positive.stl
 ```
 
 Every UI control has a matching flag (`--clearance`, `--relief-*`, `--offset`,

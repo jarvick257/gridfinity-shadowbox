@@ -36,6 +36,8 @@ COLOR_CLEARANCE = (170, 0, 170)  # offset outline incl. finger relief
 COLOR_BIN = (60, 120, 255)
 COLOR_GRID = (150, 180, 255)
 BIN_RGBA = (190, 190, 196, 255)
+POSITIVE_RGBA = (235, 125, 45, 255)
+VIEWS = ("bin", "positive")  # what the 3D preview shows
 
 
 class SessionError(RuntimeError):
@@ -135,6 +137,14 @@ class Session:
             geom, params.geometry.height_mm, params.bin, params.geometry.mirror
         )
 
+    def build_positive(self, params: Params) -> trimesh.Trimesh:
+        """The solid cut out of the bin (the pocket's positive), in bin coordinates."""
+        geom = self.offset_geometry(params)
+        _, mesh = extrude.build_positive(
+            geom, params.geometry.height_mm, params.bin, params.geometry.mirror
+        )
+        return mesh
+
     def _photo_to_bin_matrix(self, params: Params) -> np.ndarray:
         """3x3 matrix from sheet mm (y down) to bin coordinates (y up)."""
         geom = self.offset_geometry(params)
@@ -197,33 +207,49 @@ class Session:
         cv2.polylines(img, [px(state.polygon_mm)], True, COLOR_OUTLINE, 2, cv2.LINE_AA)
         return img
 
-    def scene(self, params: Params) -> tuple[trimesh.Scene, trimesh.Trimesh]:
-        """Viewer scene: the finished bin with the pocket (what the STL contains)."""
-        _, mesh = self.build(params)
+    def scene(self, params: Params, view: str = "bin") -> tuple[trimesh.Scene, trimesh.Trimesh]:
+        """Viewer scene: the finished bin (``view="bin"``, what the STL contains) or the
+        solid cut out of it (``view="positive"``, what ``<stem>.positive.stl`` contains)."""
+        if view == "bin":
+            _, mesh = self.build(params)
+            rgba = BIN_RGBA
+        elif view == "positive":
+            mesh = self.build_positive(params)
+            rgba = POSITIVE_RGBA
+        else:
+            raise SessionError(f"unknown view {view!r}; expected one of {VIEWS}")
         solid = mesh.copy()
         solid.visual = trimesh.visual.ColorVisuals(
-            solid, vertex_colors=np.tile(BIN_RGBA, (len(solid.vertices), 1))
+            solid, vertex_colors=np.tile(rgba, (len(solid.vertices), 1))
         )
         scene = trimesh.Scene()
-        scene.add_geometry(solid, geom_name="bin")
+        scene.add_geometry(solid, geom_name=view)
         return scene, mesh
 
-    def render_scene(self, params: Params) -> tuple[Path, trimesh.Trimesh]:
+    def render_scene(self, params: Params, view: str = "bin") -> tuple[Path, trimesh.Trimesh]:
         """Write the viewer scene as GLB (fixed path per session) and return it with the mesh."""
-        scene, mesh = self.scene(params)
+        scene, mesh = self.scene(params, view)
         path = self.workdir / "scene.glb"
         path.write_bytes(scene.export(file_type="glb"))
         return path, mesh
 
-    def render(self, params: Params) -> Path:
-        return self.render_scene(params)[0]
+    def render(self, params: Params, view: str = "bin") -> Path:
+        return self.render_scene(params, view)[0]
 
-    def export(self, params: Params, out_dir: str | Path, stem: str) -> list[Path]:
-        """Write ``<stem>.svg``, ``<stem>.stl`` (bin coordinates) and ``<stem>.params.json``."""
+    def export(
+        self, params: Params, out_dir: str | Path, stem: str, positive: bool = False
+    ) -> list[Path]:
+        """Write ``<stem>.svg``, ``<stem>.stl`` (bin coordinates) and ``<stem>.params.json``.
+
+        With ``positive`` also ``<stem>.positive.stl``: the solid cut out of the bin,
+        in the same coordinates. It is an output choice, not a parameter, so it is
+        not stored in params.json (the CLI makes it with ``--positive``).
+        """
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
         state = self.outline(params.image)
         _, mesh = self.build(params)
+        pos_mesh = self.build_positive(params) if positive else None
         svg, stl, js = out / f"{stem}.svg", out / f"{stem}.stl", out / f"{stem}.params.json"
         photo = self.photo_path.name if self.photo_path else None
         outline.write_svg(
@@ -233,10 +259,15 @@ class Session:
             f"tolerance_mm={params.image.tolerance_mm:g} threshold={state.threshold:.1f}",
         )
         mesh.export(str(stl))
+        files = [svg, stl]
+        if pos_mesh is not None:
+            pos = out / f"{stem}.positive.stl"
+            pos_mesh.export(str(pos))
+            files.append(pos)
         Params(params.image, params.geometry, params.bin, params.relief, photo=photo).to_json(js)
-        return [svg, stl, js]
+        return [*files, js]
 
-    def status(self, params: Params, mesh: trimesh.Trimesh | None = None) -> str:
+    def status(self, params: Params, mesh: trimesh.Trimesh | None = None, view: str = "bin") -> str:
         state = self.outline(params.image)
         w, h = state.polygon_mm.max(axis=0) - state.polygon_mm.min(axis=0)
         thr = "auto" if params.image.threshold is None else "fixed"
@@ -277,7 +308,8 @@ class Session:
                 "mirror: bin footprint drawn as seen from below; +offset Y moves the object down on the photo"
             )
         if mesh is not None:
-            lines.append(f"STL: {len(mesh.faces)} faces, {mesh.volume:.0f} mm^3")
+            what = "positive STL" if view == "positive" else "STL"
+            lines.append(f"{what}: {len(mesh.faces)} faces, {mesh.volume:.0f} mm^3")
         return "  \n".join(lines)  # trailing double space = Markdown line break
 
     def _near_wall(self, params: Params) -> bool:

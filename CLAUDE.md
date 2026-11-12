@@ -119,7 +119,11 @@ construction and bin minus pocket boolean). Optional extra `ui`: `gradio` (6.x; 
   bottom, pocket sunk into the top of the bin's *solid part*
   (`z = pocket_top_mm - depth .. pocket_top_mm`; with a stacking lip the solid stops
   1.2 mm below the nominal height). `extrude.placement_matrix` is the single
-  definition of where the cutout goes; the UI overlay draws the bin on the photo by
+  definition of where the cutout goes. The *positive* (`extrude.build_positive`,
+  CLI `--positive`, UI export checkbox `<stem>.positive.stl`) is the solid cut out
+  of the bin in the same coordinates (exactly the pocket, no cutter overshoot); it
+  is an output choice, so it is deliberately not in params.json (likewise the
+  UI's bin/positive preview toggle, `Session.scene(view=...)`); the UI overlay draws the bin on the photo by
   inverting that matrix, never by hand-derived sign rules. Gridfinity constants
   (42 mm, 7 mm, lip sizes) and the height rules (`bin_height_mm`, `infill_height_mm`,
   mirrors of the library's `height()`/`new_bin()`) live only in `bins/__init__.py`,

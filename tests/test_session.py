@@ -9,6 +9,7 @@ import shapely
 import trimesh
 
 from gridfinity_shadowbox import cli, extrude
+from gridfinity_shadowbox.bins.geometry import bin_mesh
 from gridfinity_shadowbox.params import (
     BinParams,
     GeometryParams,
@@ -113,6 +114,19 @@ def test_render_scene(session, solid_at):
     assert mesh2.volume > mesh.volume
 
 
+def test_render_scene_positive(session):
+    p = params(units_x=2, units_y=5, gridz=3, rotation_deg=20, height_mm=12)
+    scene = trimesh.load(str(session.render(p, view="positive")))
+    assert set(scene.geometry) == {"positive"}
+    shown = scene.geometry["positive"]
+    _, mesh = session.render_scene(p, view="positive")
+    assert np.allclose(shown.bounds, mesh.bounds, atol=1e-4)
+    assert np.allclose(mesh.bounds, session.build_positive(p).bounds)
+    assert "positive STL:" in session.status(p, mesh, view="positive")
+    with pytest.raises(SessionError, match="unknown view"):
+        session.scene(p, view="both")
+
+
 def test_export_and_cli_reproduce(session, tmp_path):
     p = params(units_x=2, units_y=5, rotation_deg=15, clearance=0.5, height_mm=9)
     files = session.export(p, tmp_path / "out", "knife")
@@ -127,6 +141,37 @@ def test_export_and_cli_reproduce(session, tmp_path):
     cli_mesh = trimesh.load(str(tmp_path / "cli.stl"))
     assert np.allclose(cli_mesh.bounds, ui_mesh.bounds, atol=0.01)
     assert abs(cli_mesh.volume - ui_mesh.volume) / ui_mesh.volume < 1e-3
+
+
+def test_export_positive_fills_the_pocket(session, tmp_path):
+    relief = ReliefParams(enabled=True, diameter_mm=16, count=1, angle_deg=0, inset_mm=4)
+    p = params(units_x=2, units_y=5, rotation_deg=15, clearance=0.5, height_mm=9, relief=relief)
+    files = session.export(p, tmp_path / "out", "knife", positive=True)
+    assert [f.name for f in files] == [
+        "knife.svg",
+        "knife.stl",
+        "knife.positive.stl",
+        "knife.params.json",
+    ]
+    _, stl, pos, js = files
+    assert "positive" not in json.loads(js.read_text())
+    pos_mesh = trimesh.load(str(pos))
+    assert pos_mesh.is_watertight
+    # Exactly the pocket: placed outline x depth, sunk from the solid top, same coordinates.
+    placed, _ = session.build(p)
+    top = p.bin.pocket_top_mm
+    assert np.allclose(pos_mesh.bounds[:, :2], np.reshape(placed.bounds, (2, 2)), atol=1e-6)
+    assert np.allclose(pos_mesh.bounds[:, 2], (top - 9, top))
+    assert abs(pos_mesh.volume - placed.area * 9) < 1e-6 * pos_mesh.volume
+    removed = bin_mesh(p.bin).volume - trimesh.load(str(stl)).volume
+    assert abs(removed - pos_mesh.volume) < 1e-3 * pos_mesh.volume
+
+    out = tmp_path / "cli.stl"
+    rc = cli.main(["run", str(FIXTURE), "--params", str(js), "--positive", "-o", str(out)])
+    assert rc == 0
+    cli_mesh = trimesh.load(str(out))
+    assert np.allclose(cli_mesh.bounds, pos_mesh.bounds, atol=0.01)
+    assert abs(cli_mesh.volume - pos_mesh.volume) / pos_mesh.volume < 1e-3
 
 
 def test_status_warns_on_deep_pocket(session):
